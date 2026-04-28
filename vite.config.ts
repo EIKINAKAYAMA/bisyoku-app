@@ -17,21 +17,22 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       registerType: 'autoUpdate',
       devOptions: { enabled: false }, // dev では SW を登録しない
-      includeAssets: ['favicon.ico', 'icons/*.png'],
+      includeAssets: ['favicon.ico', 'favicon.svg', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: '美食 App',
         short_name: '美食',
         description: '家族・友人グループの飲食店レビューアプリ',
-        theme_color: '#0f172a',
-        background_color: '#ffffff',
+        theme_color: '#f56a14',
+        background_color: '#fffaf5',
         display: 'standalone',
         start_url: `/${REPO_NAME}/`,
         scope: `/${REPO_NAME}/`,
         icons: [
-          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           {
-            src: 'icons/icon-512-maskable.png',
+            src: 'maskable-icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',

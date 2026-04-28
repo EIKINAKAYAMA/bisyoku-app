@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint / Typecheck / Test / Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Skip if package.json missing
+        id: check
+        run: |
+          if [ ! -f package.json ]; then
+            echo "package.json not found — skipping verification."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Lint
+        if: steps.check.outputs.skip == 'false'
+        run: npm run lint --if-present
+
+      - name: Typecheck
+        if: steps.check.outputs.skip == 'false'
+        run: npm run typecheck --if-present
+
+      - name: Test
+        if: steps.check.outputs.skip == 'false'
+        run: npm test --if-present -- --run
+
+      - name: Build
+        if: steps.check.outputs.skip == 'false'
+        env:
+          VITE_PUBLIC_SUPABASE_URL: ${{ secrets.VITE_PUBLIC_SUPABASE_URL }}
+          VITE_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+        run: npm run build --if-present

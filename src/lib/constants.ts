@@ -1,0 +1,19 @@
+export const PRICE_RANGES = [
+  '〜2000',
+  '2000〜5000',
+  '5000〜10000',
+  '10000〜20000',
+  '20000〜',
+] as const
+
+export type PriceRange = (typeof PRICE_RANGES)[number]
+
+export const RATING_AXES = [
+  { key: 'overall', label: '総合' },
+  { key: 'food', label: '料理' },
+  { key: 'service', label: 'サービス' },
+  { key: 'atmosphere', label: '雰囲気' },
+  { key: 'cost_performance', label: 'コスパ' },
+] as const
+
+export type RatingAxisKey = (typeof RATING_AXES)[number]['key']

@@ -178,6 +178,7 @@ npm run dev             # http://localhost:5173
 | `npm run build` | 本番ビルド（手元での確認用） |
 | `npm run preview` | 本番ビルドのローカルプレビュー |
 | `npm run db:types` | Supabase の型を再生成（ローカル DB 起動中前提） |
+| `npm run pwa:icons` | `public/favicon.svg` から PWA 用アイコン PNG を再生成 |
 | `supabase db reset` | マイグレーションを全適用し直す |
 | `supabase stop` | ローカル Supabase を停止 |
 

@@ -7,6 +7,23 @@ import { AuthProvider } from '@/features/auth/AuthProvider'
 import { queryClient } from '@/lib/queryClient'
 import '@/index.css'
 
+// dev モードでは過去ビルドの Service Worker / Cache が悪さをするので毎回掃除する。
+// 本番では vite-plugin-pwa が正規の SW を登録するため、ここでは何もしない。
+if (import.meta.env.DEV) {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker
+      .getRegistrations()
+      .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+      .catch(() => {})
+  }
+  if ('caches' in window) {
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .catch(() => {})
+  }
+}
+
 const root = document.getElementById('root')
 if (!root) throw new Error('#root element not found')
 

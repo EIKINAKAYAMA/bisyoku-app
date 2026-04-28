@@ -20,8 +20,11 @@ export type VisitWithRestaurant = Visit & {
 }
 
 export async function listVisitsForRestaurant(
-  restaurantId: string
+  restaurantId: string,
+  opts: { limit?: number; offset?: number } = {}
 ): Promise<VisitWithRatingAndUser[]> {
+  const offset = opts.offset ?? 0
+  const limit = opts.limit ?? 50
   const { data, error } = await supabase
     .from('visits')
     .select(
@@ -32,6 +35,7 @@ export async function listVisitsForRestaurant(
     .eq('restaurant_id', restaurantId)
     .order('visit_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
   if (error) throw error
   const rows = (data ?? []) as unknown as Array<
     Visit & {
@@ -46,8 +50,11 @@ export async function listVisitsForRestaurant(
 }
 
 export async function listVisitsForUser(
-  userId: string
+  userId: string,
+  opts: { limit?: number; offset?: number } = {}
 ): Promise<VisitWithRestaurant[]> {
+  const offset = opts.offset ?? 0
+  const limit = opts.limit ?? 50
   const { data, error } = await supabase
     .from('visits')
     .select(
@@ -58,6 +65,7 @@ export async function listVisitsForUser(
     .eq('user_id', userId)
     .order('visit_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1)
   if (error) throw error
   const rows = (data ?? []) as unknown as Array<
     Visit & {
@@ -71,21 +79,43 @@ export async function listVisitsForUser(
   }))
 }
 
-export type CreateVisitInput = {
-  restaurant_id: string
+export type RatingInput = {
+  overall: number
+  food: number
+  service: number
+  atmosphere: number
+  cost_performance: number
+}
+
+export type VisitInput = {
   visit_date: string | null
   order_content: string | null
   payment_amount: number | null
-  rating: {
-    overall: number
-    food: number
-    service: number
-    atmosphere: number
-    cost_performance: number
-  } | null
+  comment: string | null
+  rating: RatingInput | null
 }
 
-export async function createVisit(input: CreateVisitInput, userId: string) {
+export async function getVisit(
+  visitId: string
+): Promise<(Visit & { rating: Rating | null }) | null> {
+  const { data, error } = await supabase
+    .from('visits')
+    .select('*, rating:ratings(*)')
+    .eq('id', visitId)
+    .maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const row = data as unknown as Visit & { rating: Rating[] | Rating | null }
+  return {
+    ...row,
+    rating: Array.isArray(row.rating) ? (row.rating[0] ?? null) : row.rating,
+  }
+}
+
+export async function createVisit(
+  input: VisitInput & { restaurant_id: string },
+  userId: string
+) {
   const { data: visit, error: visitError } = await supabase
     .from('visits')
     .insert({
@@ -94,6 +124,7 @@ export async function createVisit(input: CreateVisitInput, userId: string) {
       visit_date: input.visit_date,
       order_content: input.order_content,
       payment_amount: input.payment_amount,
+      comment: input.comment,
     })
     .select()
     .single()
@@ -108,4 +139,51 @@ export async function createVisit(input: CreateVisitInput, userId: string) {
   }
 
   return visit
+}
+
+export async function updateVisit(visitId: string, input: VisitInput) {
+  // visits の本体を更新
+  const { error: visitError } = await supabase
+    .from('visits')
+    .update({
+      visit_date: input.visit_date,
+      order_content: input.order_content,
+      payment_amount: input.payment_amount,
+      comment: input.comment,
+    })
+    .eq('id', visitId)
+  if (visitError) throw visitError
+
+  // 評価：既存をチェック → upsert または delete
+  const { data: existing, error: getError } = await supabase
+    .from('ratings')
+    .select('id')
+    .eq('visit_id', visitId)
+    .maybeSingle()
+  if (getError) throw getError
+
+  if (input.rating) {
+    if (existing) {
+      const { error } = await supabase
+        .from('ratings')
+        .update(input.rating)
+        .eq('visit_id', visitId)
+      if (error) throw error
+    } else {
+      const { error } = await supabase
+        .from('ratings')
+        .insert({ visit_id: visitId, ...input.rating })
+      if (error) throw error
+    }
+  } else if (existing) {
+    // 評価を外す
+    const { error } = await supabase.from('ratings').delete().eq('visit_id', visitId)
+    if (error) throw error
+  }
+}
+
+export async function deleteVisit(visitId: string) {
+  // ratings は ON DELETE CASCADE で自動削除される
+  const { error } = await supabase.from('visits').delete().eq('id', visitId)
+  if (error) throw error
 }

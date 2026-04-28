@@ -1,5 +1,8 @@
-import { Link, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { UtensilsCrossed } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 
@@ -9,11 +12,18 @@ export function Login() {
   const error = params.get('error')
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-2xl">美食 App</CardTitle>
-          <CardDescription>家族・友人グループの飲食店レビュー</CardDescription>
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/10 p-4">
+      <Card className="w-full max-w-sm border-2 shadow-xl">
+        <CardHeader className="space-y-3 text-center">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-gradient-to-br from-primary to-accent text-white shadow-md">
+            <UtensilsCrossed className="h-7 w-7" />
+          </div>
+          <CardTitle className="text-2xl font-bold tracking-tight md:text-3xl">
+            美食 App
+          </CardTitle>
+          <CardDescription className="text-base">
+            家族・友人グループの飲食店レビュー
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error === 'not-invited' && (
@@ -35,8 +45,59 @@ export function Login() {
               新規登録
             </Link>
           </p>
+
+          {import.meta.env.DEV && <DevLoginPanel />}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+/** dev mode 限定。`supabase/seed.sql` が用意するテストユーザーで一発ログイン */
+function DevLoginPanel() {
+  const navigate = useNavigate()
+  const [busy, setBusy] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  const signIn = async (email: string) => {
+    setBusy(email)
+    setErr(null)
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password: 'devpass',
+    })
+    setBusy(null)
+    if (error) {
+      setErr(`${email}: ${error.message}（seed.sql が適用されていますか？）`)
+      return
+    }
+    navigate('/', { replace: true })
+  }
+
+  return (
+    <div className="space-y-2 rounded-md border border-dashed border-muted-foreground/30 p-3">
+      <p className="text-xs text-muted-foreground">DEV ONLY · seed されたテストユーザー</p>
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => signIn('dev1@local.test')}
+          disabled={!!busy}
+        >
+          {busy === 'dev1@local.test' ? '...' : '開発ユーザー 1'}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => signIn('dev2@local.test')}
+          disabled={!!busy}
+        >
+          {busy === 'dev2@local.test' ? '...' : '開発ユーザー 2'}
+        </Button>
+      </div>
+      {err && <p className="text-xs text-destructive">{err}</p>}
     </div>
   )
 }

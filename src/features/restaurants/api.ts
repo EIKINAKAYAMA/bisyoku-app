@@ -10,78 +10,117 @@ export type RestaurantWithSummary = Restaurant & {
   summary: RatingSummary | null
 }
 
+export type RestaurantSort = 'recent' | 'name' | 'rating-high'
+
 export type RestaurantFilters = {
   query?: string
   genreId?: string
   priceRange?: PriceRange
   minOverall?: number
+  sort?: RestaurantSort
+  limit?: number
+  offset?: number
 }
 
 export async function listRestaurants(
   filters: RestaurantFilters = {}
 ): Promise<RestaurantWithSummary[]> {
-  let query = supabase
-    .from('restaurants')
-    .select(
-      `*,
-       genre:genres(id, name),
-       summary:restaurant_rating_summary(*)`
-    )
-    .order('created_at', { ascending: false })
+  let restaurantsQuery = supabase.from('restaurants').select('*, genre:genres(id, name)')
 
   if (filters.query) {
-    query = query.ilike('name', `%${filters.query}%`)
+    restaurantsQuery = restaurantsQuery.ilike('name', `%${filters.query}%`)
   }
   if (filters.genreId) {
-    query = query.eq('genre_id', filters.genreId)
+    restaurantsQuery = restaurantsQuery.eq('genre_id', filters.genreId)
   }
   if (filters.priceRange) {
-    query = query.eq('price_range', filters.priceRange)
+    restaurantsQuery = restaurantsQuery.eq('price_range', filters.priceRange)
   }
 
-  const { data, error } = await query
-  if (error) throw error
+  // 並び順
+  switch (filters.sort) {
+    case 'name':
+      restaurantsQuery = restaurantsQuery.order('name', { ascending: true })
+      break
+    case 'rating-high':
+      // VIEW は FK 経由で並べられないので一旦 created_at で取り、後でクライアント側ソート
+      restaurantsQuery = restaurantsQuery.order('created_at', { ascending: false })
+      break
+    case 'recent':
+    default:
+      restaurantsQuery = restaurantsQuery.order('created_at', { ascending: false })
+  }
 
-  const rows = (data ?? []) as unknown as Array<
-    Restaurant & {
-      genre: { id: string; name: string } | null
-      summary: RatingSummary[] | RatingSummary | null
-    }
-  >
+  // restaurants と summary を並列で取得し、クライアント側で merge
+  // （VIEW には FK が無いため PostgREST の自動 embed が効かない）
+  const [restaurantsResult, summariesResult] = await Promise.all([
+    restaurantsQuery,
+    supabase.from('restaurant_rating_summary').select('*'),
+  ])
 
-  let mapped = rows.map<RestaurantWithSummary>((row) => ({
+  if (restaurantsResult.error) throw restaurantsResult.error
+  if (summariesResult.error) throw summariesResult.error
+
+  const summaryMap = new Map<string, RatingSummary>()
+  for (const s of summariesResult.data ?? []) {
+    if (s.restaurant_id) summaryMap.set(s.restaurant_id, s)
+  }
+
+  let mapped = (restaurantsResult.data ?? []).map<RestaurantWithSummary>((row) => ({
     ...row,
-    summary: Array.isArray(row.summary) ? (row.summary[0] ?? null) : row.summary,
+    summary: summaryMap.get(row.id) ?? null,
   }))
 
   if (filters.minOverall != null) {
-    mapped = mapped.filter(
-      (r) => (r.summary?.avg_overall ?? 0) >= filters.minOverall!
+    mapped = mapped.filter((r) => (r.summary?.avg_overall ?? 0) >= filters.minOverall!)
+  }
+
+  if (filters.sort === 'rating-high') {
+    mapped.sort(
+      (a, b) => (b.summary?.avg_overall ?? -1) - (a.summary?.avg_overall ?? -1)
     )
   }
 
-  return mapped
+  // ページング（クライアント側で適用：minOverall フィルタや rating-high ソートが
+  // クライアントで動くため、DB レベルで range() するとずれが出る）
+  const offset = filters.offset ?? 0
+  const limit = filters.limit ?? 50
+  return mapped.slice(offset, offset + limit)
+}
+
+export async function countRestaurants(
+  filters: Omit<RestaurantFilters, 'sort' | 'limit' | 'offset'> = {}
+): Promise<number> {
+  let q = supabase.from('restaurants').select('*', { count: 'exact', head: true })
+  if (filters.query) q = q.ilike('name', `%${filters.query}%`)
+  if (filters.genreId) q = q.eq('genre_id', filters.genreId)
+  if (filters.priceRange) q = q.eq('price_range', filters.priceRange)
+  const { count, error } = await q
+  if (error) throw error
+  return count ?? 0
 }
 
 export async function getRestaurant(id: string): Promise<RestaurantWithSummary | null> {
-  const { data, error } = await supabase
-    .from('restaurants')
-    .select(
-      `*,
-       genre:genres(id, name),
-       summary:restaurant_rating_summary(*)`
-    )
-    .eq('id', id)
-    .maybeSingle()
-  if (error) throw error
-  if (!data) return null
-  const row = data as unknown as Restaurant & {
-    genre: { id: string; name: string } | null
-    summary: RatingSummary[] | RatingSummary | null
-  }
+  const [restaurantResult, summaryResult] = await Promise.all([
+    supabase
+      .from('restaurants')
+      .select('*, genre:genres(id, name)')
+      .eq('id', id)
+      .maybeSingle(),
+    supabase
+      .from('restaurant_rating_summary')
+      .select('*')
+      .eq('restaurant_id', id)
+      .maybeSingle(),
+  ])
+
+  if (restaurantResult.error) throw restaurantResult.error
+  if (summaryResult.error) throw summaryResult.error
+  if (!restaurantResult.data) return null
+
   return {
-    ...row,
-    summary: Array.isArray(row.summary) ? (row.summary[0] ?? null) : row.summary,
+    ...restaurantResult.data,
+    summary: summaryResult.data ?? null,
   }
 }
 
@@ -103,4 +142,33 @@ export async function createRestaurant(
     .single()
   if (error) throw error
   return data
+}
+
+export async function updateRestaurant(
+  id: string,
+  input: CreateRestaurantInput
+): Promise<Restaurant> {
+  const { data, error } = await supabase
+    .from('restaurants')
+    .update(input)
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function deleteRestaurant(id: string): Promise<void> {
+  // visits → ratings は ON DELETE CASCADE で連鎖削除される
+  const { error } = await supabase.from('restaurants').delete().eq('id', id)
+  if (error) throw error
+}
+
+export async function countVisitsForRestaurant(restaurantId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from('visits')
+    .select('*', { count: 'exact', head: true })
+    .eq('restaurant_id', restaurantId)
+  if (error) throw error
+  return count ?? 0
 }

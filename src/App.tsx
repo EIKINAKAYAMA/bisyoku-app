@@ -6,8 +6,10 @@ import { Signup } from '@/pages/Signup'
 import { AuthCallback } from '@/pages/AuthCallback'
 import { RestaurantList } from '@/pages/RestaurantList'
 import { RestaurantNew } from '@/pages/RestaurantNew'
+import { RestaurantEdit } from '@/pages/RestaurantEdit'
 import { RestaurantDetail } from '@/pages/RestaurantDetail'
 import { VisitNew } from '@/pages/VisitNew'
+import { VisitEdit } from '@/pages/VisitEdit'
 import { UserVisits } from '@/pages/UserVisits'
 import { MyProfile } from '@/pages/MyProfile'
 
@@ -27,8 +29,10 @@ export function App() {
       >
         <Route path="/" element={<RestaurantList />} />
         <Route path="/restaurants/new" element={<RestaurantNew />} />
+        <Route path="/restaurants/:id/edit" element={<RestaurantEdit />} />
         <Route path="/restaurants/:id" element={<RestaurantDetail />} />
         <Route path="/restaurants/:id/visits/new" element={<VisitNew />} />
+        <Route path="/restaurants/:id/visits/:visitId/edit" element={<VisitEdit />} />
         <Route path="/users/:id" element={<UserVisits />} />
         <Route path="/me" element={<MyProfile />} />
       </Route>

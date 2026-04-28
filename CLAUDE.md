@@ -257,22 +257,20 @@ supabase functions serve               # Edge Functions ローカル実行
 supabase stop                          # 停止
 ```
 
-### 環境別 env ファイルの使い分け
+### env ファイルの方針
 
-Vite の env 読み込み優先度（高 → 低）：
-`.env.[mode].local` → `.env.[mode]` → `.env.local` → `.env`
+シンプルに **`.env` 1 本（git 管理外）** で運用する。本番値はリポジトリ Secrets が唯一の正。
 
-mode 限定ファイル（`.env.development*` / `.env.production*`）は**他モードでは読まれない**ため、本番値が dev に漏れない。本プロジェクトは以下を採用：
+| 利用シーン | 値の置き場所 |
+|---|---|
+| ローカル開発（`npm run dev`） | リポジトリ直下の `.env` |
+| CI / GitHub Pages ビルド | リポジトリ Secrets（`.github/workflows/*.yml` から `${{ secrets.* }}` で参照） |
+| keepalive ワークフロー | 同上 |
 
-| ファイル | 何時読まれるか | 中身 | git |
-|---|---|---|---|
-| `.env.development.local` | `npm run dev` | ローカル Supabase（Docker）の URL ＋ key | 管理外 |
-| `.env.production.local` | ローカルで `npm run build` する時 | 本番 Supabase の URL ＋ Publishable key | 管理外 |
-| GitHub Actions Secrets | CI ビルド時 | 本番値（`VITE_PUBLIC_SUPABASE_URL` / `VITE_PUBLIC_SUPABASE_PUBLISHABLE_KEY`） | — |
+`.env`、`.env.*` は `.gitignore` で全て除外済み。
+ローカルで本番ビルド（`npm run build`）を試したい時は、`.env` を一時的に本番値に書き換える運用。
 
-`.env`（プレフィクス無し）は使わない方針。dev/prod を混在させない。
-
-`.env.development.local` の値は `supabase start` 後の `supabase status` 出力（API URL / Publishable Key）から埋める。
+`.env` の値は `supabase start` 後の `supabase status` 出力（API URL / Publishable Key）から埋める。
 
 `supabase/migrations/` と `supabase/functions/` は git 管理。ローカルで作業 → `supabase db push` で本番へ反映。
 

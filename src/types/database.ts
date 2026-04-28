@@ -1,7 +1,3 @@
-// 自動生成用プレースホルダ。
-// Supabase CLI が起動したら `npm run db:types` で実体に置き換わる：
-//   supabase gen types typescript --local > src/types/database.ts
-
 export type Json =
   | string
   | number
@@ -10,153 +6,415 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
-type PriceRange =
-  | '〜2000'
-  | '2000〜5000'
-  | '5000〜10000'
-  | '10000〜20000'
-  | '20000〜'
-
-type Timestamps = { created_at: string }
-
 export type Database = {
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
-      profiles: {
+      allowed_emails: {
         Row: {
-          id: string
-          display_name: string
-          avatar_url: string | null
-        } & Timestamps
-        Insert: {
-          id: string
-          display_name: string
-          avatar_url?: string | null
-          created_at?: string
+          created_at: string
+          email: string
         }
-        Update: Partial<{
-          display_name: string
-          avatar_url: string | null
-        }>
+        Insert: {
+          created_at?: string
+          email: string
+        }
+        Update: {
+          created_at?: string
+          email?: string
+        }
         Relationships: []
       }
       genres: {
         Row: {
+          created_at: string
+          created_by: string | null
           id: string
           name: string
-          created_by: string | null
-        } & Timestamps
+        }
         Insert: {
+          created_at?: string
+          created_by?: string | null
           id?: string
           name: string
-          created_by?: string | null
-          created_at?: string
         }
-        Update: Partial<{ name: string }>
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "genres_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      health: {
+        Row: {
+          id: number
+          pinged_at: string
+        }
+        Insert: {
+          id: number
+          pinged_at?: string
+        }
+        Update: {
+          id?: number
+          pinged_at?: string
+        }
         Relationships: []
       }
-      restaurants: {
+      profiles: {
         Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string
           id: string
-          name: string
-          link: string | null
-          genre_id: string
-          price_range: PriceRange
-          created_by: string | null
-        } & Timestamps
-        Insert: {
-          id?: string
-          name: string
-          link?: string | null
-          genre_id: string
-          price_range: PriceRange
-          created_by?: string | null
-          created_at?: string
         }
-        Update: Partial<{
-          name: string
-          link: string | null
-          genre_id: string
-          price_range: PriceRange
-        }>
-        Relationships: []
-      }
-      visits: {
-        Row: {
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name: string
           id: string
-          restaurant_id: string
-          user_id: string
-          visit_date: string | null
-          order_content: string | null
-          payment_amount: number | null
-        } & Timestamps
-        Insert: {
-          id?: string
-          restaurant_id: string
-          user_id: string
-          visit_date?: string | null
-          order_content?: string | null
-          payment_amount?: number | null
-          created_at?: string
         }
-        Update: Partial<{
-          visit_date: string | null
-          order_content: string | null
-          payment_amount: number | null
-        }>
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string
+          id?: string
+        }
         Relationships: []
       }
       ratings: {
         Row: {
-          id: string
-          visit_id: string
-          overall: number
-          food: number
-          service: number
           atmosphere: number
           cost_performance: number
+          food: number
+          id: string
+          overall: number
+          service: number
+          visit_id: string
         }
         Insert: {
+          atmosphere: number
+          cost_performance: number
+          food: number
           id?: string
+          overall: number
+          service: number
           visit_id: string
-          overall: number
-          food: number
-          service: number
-          atmosphere: number
-          cost_performance: number
         }
-        Update: Partial<{
-          overall: number
-          food: number
-          service: number
-          atmosphere: number
-          cost_performance: number
-        }>
-        Relationships: []
+        Update: {
+          atmosphere?: number
+          cost_performance?: number
+          food?: number
+          id?: string
+          overall?: number
+          service?: number
+          visit_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ratings_visit_id_fkey"
+            columns: ["visit_id"]
+            isOneToOne: true
+            referencedRelation: "visits"
+            referencedColumns: ["id"]
+          },
+        ]
       }
-      health: {
-        Row: { id: number; pinged_at: string }
-        Insert: { id?: number; pinged_at?: string }
-        Update: Partial<{ pinged_at: string }>
-        Relationships: []
+      restaurants: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          genre_id: string
+          id: string
+          link: string | null
+          name: string
+          price_range: Database["public"]["Enums"]["price_range_enum"]
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          genre_id: string
+          id?: string
+          link?: string | null
+          name: string
+          price_range: Database["public"]["Enums"]["price_range_enum"]
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          genre_id?: string
+          id?: string
+          link?: string | null
+          name?: string
+          price_range?: Database["public"]["Enums"]["price_range_enum"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "restaurants_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "restaurants_genre_id_fkey"
+            columns: ["genre_id"]
+            isOneToOne: false
+            referencedRelation: "genres"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      visits: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          order_content: string | null
+          payment_amount: number | null
+          restaurant_id: string
+          user_id: string
+          visit_date: string | null
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          order_content?: string | null
+          payment_amount?: number | null
+          restaurant_id: string
+          user_id: string
+          visit_date?: string | null
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          order_content?: string | null
+          payment_amount?: number | null
+          restaurant_id?: string
+          user_id?: string
+          visit_date?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "visits_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurant_rating_summary"
+            referencedColumns: ["restaurant_id"]
+          },
+          {
+            foreignKeyName: "visits_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "visits_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       restaurant_rating_summary: {
         Row: {
-          restaurant_id: string
-          rating_count: number
-          avg_overall: number | null
-          avg_food: number | null
-          avg_service: number | null
           avg_atmosphere: number | null
           avg_cost_performance: number | null
+          avg_food: number | null
+          avg_overall: number | null
+          avg_service: number | null
+          rating_count: number | null
+          restaurant_id: string | null
         }
         Relationships: []
       }
     }
-    Functions: Record<string, never>
-    Enums: { price_range_enum: PriceRange }
-    CompositeTypes: Record<string, never>
+    Functions: {
+      is_invited_user: { Args: never; Returns: boolean }
+    }
+    Enums: {
+      price_range_enum:
+        | "〜2000"
+        | "2000〜5000"
+        | "5000〜10000"
+        | "10000〜20000"
+        | "20000〜"
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
   }
 }
+
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+
+export type Tables<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
+
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
+
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
+  public: {
+    Enums: {
+      price_range_enum: [
+        "〜2000",
+        "2000〜5000",
+        "5000〜10000",
+        "10000〜20000",
+        "20000〜",
+      ],
+    },
+  },
+} as const
+

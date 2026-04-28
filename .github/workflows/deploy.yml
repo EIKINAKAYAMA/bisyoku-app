@@ -1,4 +1,10 @@
-name: Deploy to GitHub Pages
+name: Deploy
+
+# main への push で：
+#   1. Supabase に migration を適用（supabase db push）
+#   2. Edge Function（verify-passphrase）をデプロイ
+#   3. フロントエンドをビルド
+#   4. GitHub Pages に公開
 
 on:
   push:
@@ -10,23 +16,50 @@ permissions:
   pages: write
   id-token: write
 
+# 同時に複数の deploy が走らないように直列化（migration 競合防止）
 concurrency:
-  group: pages
+  group: deploy
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build
+  migrate:
+    name: Apply DB migrations
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Link to project
+        run: supabase link --project-ref ${{ vars.SUPABASE_PROJECT_REF }}
+      - name: Push migrations
+        run: supabase db push
 
-      - name: Guard — package.json must exist
+  functions:
+    name: Deploy Edge Functions
+    runs-on: ubuntu-latest
+    needs: migrate
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy verify-passphrase
         run: |
-          if [ ! -f package.json ]; then
-            echo "::error::package.json not found. Initialize the project before deploying."
-            exit 1
-          fi
+          supabase functions deploy verify-passphrase \
+            --project-ref ${{ vars.SUPABASE_PROJECT_REF }}
+
+  build:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    needs: migrate
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -55,8 +88,8 @@ jobs:
           path: dist
 
   deploy:
-    name: Deploy
-    needs: build
+    name: Deploy to GitHub Pages
+    needs: [build, functions]
     runs-on: ubuntu-latest
     environment:
       name: github-pages

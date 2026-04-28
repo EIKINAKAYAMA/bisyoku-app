@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => ({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      devOptions: { enabled: false }, // dev では SW を登録しない
       includeAssets: ['favicon.ico', 'icons/*.png'],
       manifest: {
         name: '美食 App',

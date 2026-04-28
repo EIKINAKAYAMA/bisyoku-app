@@ -1,11 +1,11 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { getRestaurant } from '@/features/restaurants/api'
 import { createVisit, type VisitInput } from '@/features/visits/api'
 import { VisitForm } from '@/features/visits/VisitForm'
-import { Button } from '@/components/ui/button'
+import { BackButton } from '@/components/BackButton'
+import { invalidateAfterVisitChange, qk } from '@/lib/queryKeys'
 
 export function VisitNew() {
   const { id = '' } = useParams<{ id: string }>()
@@ -14,7 +14,7 @@ export function VisitNew() {
   const queryClient = useQueryClient()
 
   const restaurantQuery = useQuery({
-    queryKey: ['restaurant', id],
+    queryKey: qk.restaurants.detail(id),
     queryFn: () => getRestaurant(id),
     enabled: !!id,
   })
@@ -25,18 +25,14 @@ export function VisitNew() {
       return createVisit({ ...input, restaurant_id: id }, user.id)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['visits', 'restaurant', id] })
-      queryClient.invalidateQueries({ queryKey: ['restaurant', id] })
-      queryClient.invalidateQueries({ queryKey: ['restaurants'] })
+      invalidateAfterVisitChange(queryClient, id)
       navigate(`/restaurants/${id}`, { replace: true })
     },
   })
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="-ml-2">
-        <ChevronLeft className="h-4 w-4" /> 戻る
-      </Button>
+      <BackButton />
       <header>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">訪問を追加</h1>
         <p className="mt-1 text-base text-muted-foreground">

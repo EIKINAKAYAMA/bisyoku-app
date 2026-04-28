@@ -1,43 +1,52 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft } from 'lucide-react'
 import { deleteVisit, listVisitsForUser } from '@/features/visits/api'
 import { getProfile } from '@/features/users/api'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { VisitItem } from '@/features/visits/VisitItem'
+import { BackButton } from '@/components/BackButton'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-
-const PAGE_SIZE = 30
+import { LIST_PAGE_SIZE } from '@/lib/constants'
+import { invalidateAfterVisitChange, qk } from '@/lib/queryKeys'
 
 export function UserVisits() {
   const { id = '' } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const isOwner = id === user?.id
-  const [limit, setLimit] = useState(PAGE_SIZE)
-  const [visitToDelete, setVisitToDelete] = useState<string | null>(null)
+  const [limit, setLimit] = useState(LIST_PAGE_SIZE)
+  const [visitToDelete, setVisitToDelete] = useState<{
+    visitId: string
+    restaurantId: string | null
+  } | null>(null)
 
   const profileQuery = useQuery({
-    queryKey: ['profile', id],
+    queryKey: qk.profiles.detail(id),
     queryFn: () => getProfile(id),
     enabled: !!id,
   })
 
   const visitsQuery = useQuery({
-    queryKey: ['visits', 'user', id, limit],
+    queryKey: qk.visits.forUserPaged(id, limit),
     queryFn: () => listVisitsForUser(id, { limit }),
     enabled: !!id,
   })
 
   const deleteMut = useMutation({
-    mutationFn: (visitId: string) => deleteVisit(visitId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['visits', 'user', id] })
-      queryClient.invalidateQueries({ queryKey: ['restaurants'] })
+    mutationFn: (target: { visitId: string; restaurantId: string | null }) =>
+      deleteVisit(target.visitId),
+    onSuccess: (_data, target) => {
+      // 紐づく店舗側のキャッシュ（一覧・詳細・訪問件数・他ユーザー履歴）も漏れなく無効化
+      if (target.restaurantId) {
+        invalidateAfterVisitChange(queryClient, target.restaurantId)
+      } else {
+        queryClient.invalidateQueries({ queryKey: qk.restaurants.all })
+        queryClient.invalidateQueries({ queryKey: qk.visits.allForUsers })
+      }
+      queryClient.invalidateQueries({ queryKey: qk.visits.forUser(id) })
       setVisitToDelete(null)
     },
   })
@@ -47,9 +56,7 @@ export function UserVisits() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="-ml-2">
-        <ChevronLeft className="h-4 w-4" /> 戻る
-      </Button>
+      <BackButton />
 
       <header className="flex items-center gap-4">
         <Avatar
@@ -92,7 +99,15 @@ export function UserVisits() {
               editTo={
                 v.restaurant?.id ? `/restaurants/${v.restaurant.id}/visits/${v.id}/edit` : undefined
               }
-              onDelete={isOwner ? () => setVisitToDelete(v.id) : undefined}
+              onDelete={
+                isOwner
+                  ? () =>
+                      setVisitToDelete({
+                        visitId: v.id,
+                        restaurantId: v.restaurant?.id ?? null,
+                      })
+                  : undefined
+              }
               deleting={deleteMut.isPending}
             />
           </li>
@@ -101,7 +116,7 @@ export function UserVisits() {
 
       {hasMore && (
         <div className="pt-2 text-center">
-          <Button variant="outline" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+          <Button variant="outline" onClick={() => setLimit((n) => n + LIST_PAGE_SIZE)}>
             もっと見る
           </Button>
         </div>

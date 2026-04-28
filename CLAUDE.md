@@ -50,6 +50,7 @@ SPA のコードは全てクライアントに露出するため、**合言葉�
    - NG：`supabase.auth.admin.deleteUser(user_id)` で巻き戻し → クライアント側で `supabase.auth.signOut()` ＋ エラー表示 ＋ `/signup` 再試行へ遷移
 5. 通常ログインは `/login` で Google OAuth のみ
 6. ログイン後の権限判定は「`profiles` レコードが存在すること」で行う（RLS で `EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid())` を共通条件にする）
+7. **Avatar 自動同期**：ログイン時に Google の `user_metadata.avatar_url` / `picture` と `profiles.avatar_url` を比較し、差分があれば `profiles` を更新する（`AuthProvider.syncFromAuthMeta`）。`display_name` はユーザー編集を尊重するため自動同期しない
 
 **Edge Function の CORS**：GitHub Pages → `*.supabase.co` は別オリジン。`verify-passphrase` 内で以下を明示する必要がある（書かないとブラウザに弾かれる）：
 
@@ -116,6 +117,7 @@ visits              -- 訪問記録（任意）
   visit_date    date                  -- nullable
   order_content text
   payment_amount integer              -- 円・小数なし、CHECK >= 0
+  comment       text                  -- 任意の感想コメント
   created_at    timestamptz DEFAULT now()
 
 ratings             -- 評価（visit に 0..1 で紐付く）
@@ -178,32 +180,40 @@ Supabase Free Tier は **1 週間 API 無アクセスでプロジェクトが自
 
 ```
 bisyoku-app/
-├── .github/workflows/        CI / Deploy
+├── .github/workflows/        CI / Deploy / Keepalive
 ├── public/                   静的アセット、PWA アイコン
 ├── src/
-│   ├── components/           汎用コンポーネント
-│   │   └── ui/               shadcn/ui で生成したもの
-│   ├── features/             機能単位のモジュール
-│   │   ├── auth/
-│   │   ├── restaurants/
-│   │   ├── visits/
-│   │   ├── ratings/
-│   │   └── users/
-│   ├── hooks/                グローバルフック
+│   ├── components/           汎用コンポーネント（BackButton / ConfirmDialog / GenreField / AppLayout）
+│   │   └── ui/               shadcn/ui ベースのプリミティブ（button / card / dialog / select 等）
+│   ├── features/             機能単位のモジュール（API + UI 両方を含める）
+│   │   ├── auth/             AuthProvider / RequireAuth / signupIntent
+│   │   ├── restaurants/      api.ts / RestaurantForm
+│   │   ├── visits/           api.ts / VisitForm / VisitItem
+│   │   ├── genres/           api.ts
+│   │   └── users/            api.ts
+│   ├── hooks/                useDebounced 等の汎用フック
 │   ├── lib/
 │   │   ├── supabase.ts       クライアント生成
-│   │   └── utils.ts
+│   │   ├── queryClient.ts    TanStack Query デフォルト
+│   │   ├── queryKeys.ts      `qk` ファクトリ（全 queryKey はここを経由）
+│   │   ├── constants.ts      PRICE_RANGES / RATING_AXES / LIST_PAGE_SIZE
+│   │   ├── rating.ts         rating スコアのカラー判定
+│   │   └── utils.ts          cn (clsx + tailwind-merge)
 │   ├── pages/                ルートに対応するページ
+│   ├── test/                 Vitest setup
 │   ├── types/                共有型・DB 型（`supabase gen types` 出力）
-│   ├── App.tsx
-│   ├── main.tsx
-│   └── routes.tsx
+│   ├── App.tsx               ルーティング定義
+│   ├── main.tsx              ルート（Provider 構成 + dev 用 SW クリア）
+│   └── vite-env.d.ts
 ├── supabase/
 │   ├── migrations/           SQL マイグレーション
-│   └── functions/
-│       └── verify-passphrase/
+│   ├── functions/
+│   │   ├── _shared/cors.ts
+│   │   └── verify-passphrase/
+│   ├── seed.sql              ローカル専用：dev1/dev2 ユーザーを seed
+│   └── config.toml
 ├── index.html
-├── vite.config.ts
+├── vite.config.ts            Vite + PWA + base=/bisyoku-app/（本番のみ）
 ├── tailwind.config.ts
 ├── tsconfig.json
 └── package.json
@@ -306,21 +316,42 @@ npm run db:types         # Supabase 型生成（src/types/database.ts）
 - アクセシビリティ：shadcn/ui の Radix ベースを尊重、`aria-*` を欠かさない
 - コミットメッセージは Conventional Commits 推奨
 
+### TanStack Query のキー管理
+
+クエリキーは `src/lib/queryKeys.ts` の `qk` ファクトリに集約する。invalidation は前方一致なので、たとえば `qk.visits.forRestaurant(id)` を渡すと派生キー（`forRestaurantPaged(id, limit)` 等）もまとめて無効化される。**新しいクエリを追加する時は必ず `qk` を経由**する（文字列リテラルを書かない）。
+
+訪問・評価が変わった後の invalidation は **`invalidateAfterVisitChange(qc, restaurantId)`** に集約してある（同じ店舗の visits / count / detail / 一覧 / 全ユーザー履歴を一括無効化）。**ページ毎に `invalidateQueries` を 5 連発書かない**こと（無効化漏れの温床）。
+
+### バンドル戦略（route-level code splitting）
+
+- `src/App.tsx` は全ページを `React.lazy` で読み込み、ルートごとに別チャンク化する
+- `vite.config.ts` の `rollupOptions.output.manualChunks` で `vendor-react` / `vendor-supabase` / `vendor-radix` / `vendor-query` / `vendor` を分離。アプリコード変更時のキャッシュ無効化を最小化する
+- 新しいページを追加する場合は `App.tsx` 内で同じパターンの `lazy(() => import(...))` を踏襲する
+
 ## 現在のステータス
 
-リポジトリは **初期化前**。次のセットアップ手順が必要：
+実装は一通り完了し、本番（GitHub Pages + Supabase 本番プロジェクト）にデプロイ済み。
+今後の作業は通常の機能追加 / 修正フローに乗せる：
 
-1. Vite + React + TS で `package.json` を生成（`npm create vite@latest`）
-2. Tailwind CSS / shadcn/ui / TanStack Query / React Router / vite-plugin-pwa 等を導入
-3. **既存 `.env` の `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` を `VITE_PUBLIC_SUPABASE_PUBLISHABLE_KEY` にリネーム**、`VITE_PUBLIC_SUPABASE_URL` を追加
-4. Supabase プロジェクトに `migrations/` で初期スキーマ・RLS・`health` テーブルを投入
-5. Edge Function `verify-passphrase` 実装 → `supabase functions deploy verify-passphrase` でデプロイ。Secrets（`SIGNUP_PASSPHRASE_HASH` / `SIGNUP_PASSPHRASE_SALT`）は `supabase secrets set` で登録
-6. **Google Cloud Console** で OAuth 2.0 Client を作成 → Authorized redirect URIs に Supabase Auth のコールバック URL を登録
-7. **Supabase ダッシュボード**：
-   - Authentication → Providers → **Google を Enable**、Client ID / Client Secret を入力
-   - Authentication → URL Configuration で Site URL / Additional Redirect URLs を設定
-8. GitHub Pages 有効化（Source = GitHub Actions）+ リポジトリ Secrets（`VITE_PUBLIC_SUPABASE_URL` / `VITE_PUBLIC_SUPABASE_PUBLISHABLE_KEY`）登録 → 初回デプロイ確認
-9. `keepalive.yml` を 1 度手動実行（`workflow_dispatch`）して疎通確認
+- 仕様変更 → コード変更 → PR → main マージで自動デプロイ（`.github/workflows/deploy.yml`）
+- DB スキーマ変更 → `supabase migration new` → ローカル `supabase db reset` で確認 → `npm run db:types` 再生成 → main マージで CI が `supabase db push`
+- Edge Function 変更 → ローカル `supabase functions serve` で確認 → main マージで CI が `supabase functions deploy verify-passphrase`
+
+具体的なローカル開発手順 / 初回デプロイ手順 / 2 回目以降の運用は `README.md` を参照。
+
+実装済みの主な機能：
+
+- 招待制サインアップ（合言葉 + Google OAuth + Edge Function 検証）
+- Google avatar の自動同期（display_name はユーザー編集を尊重）
+- 店舗の作成 / 編集 / 削除（cascade 警告付き確認ダイアログ）
+- 訪問 + 5 軸 10 段階評価の作成 / 編集 / 削除
+- 訪問にコメント欄（任意）
+- 一覧フィルタ：店名 / ジャンル / 価格帯 / 総合 ≥ N / 並び（新着・評価高い・名前）
+- ページング：「もっと見る」で +`LIST_PAGE_SIZE` 件
+- ユーザー別訪問履歴
+- メンバー一覧
+- PWA（vite-plugin-pwa, autoUpdate, Supabase は NetworkOnly）
+- dev 用ワンクリックログイン（`supabase/seed.sql` の dev1 / dev2 ユーザー）
 
 ## やらないこと（明示的スコープ外）
 

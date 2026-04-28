@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ListChecks, LogOut } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { listProfiles, updateProfile } from '@/features/users/api'
+import { qk } from '@/lib/queryKeys'
 import { Avatar } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -15,7 +16,7 @@ export function MyProfile() {
   const queryClient = useQueryClient()
 
   const profilesQuery = useQuery({
-    queryKey: ['profiles'],
+    queryKey: qk.profiles.all,
     queryFn: listProfiles,
   })
 
@@ -29,7 +30,9 @@ export function MyProfile() {
     },
     onSuccess: async () => {
       await refreshProfile()
-      queryClient.invalidateQueries({ queryKey: ['profiles'] })
+      queryClient.invalidateQueries({ queryKey: qk.profiles.all })
+      // 訪問記録に embed されている display_name も古くなるので、visit 系キャッシュも一掃
+      queryClient.invalidateQueries({ queryKey: qk.visits.all })
       setEditing(false)
     },
   })

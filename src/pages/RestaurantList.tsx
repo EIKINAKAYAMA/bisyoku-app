@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowDownAZ, Plus, Search, Sparkles, TrendingUp } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
 import {
   listRestaurants,
   type RestaurantFilters,
@@ -10,7 +10,8 @@ import {
 } from '@/features/restaurants/api'
 import { listGenres } from '@/features/genres/api'
 import { useDebounced } from '@/hooks/useDebounced'
-import { PRICE_RANGES, type PriceRange } from '@/lib/constants'
+import { LIST_PAGE_SIZE, PRICE_RANGES, type PriceRange } from '@/lib/constants'
+import { qk } from '@/lib/queryKeys'
 import { ratingTone } from '@/lib/rating'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -25,12 +26,11 @@ import {
 } from '@/components/ui/select'
 
 const ALL = '__all__'
-const PAGE_SIZE = 30
 
-const SORT_OPTIONS: Array<{ value: RestaurantSort; label: string; icon: React.ReactNode }> = [
-  { value: 'recent', label: '新着順', icon: <Sparkles className="h-3.5 w-3.5" /> },
-  { value: 'rating-high', label: '評価が高い順', icon: <TrendingUp className="h-3.5 w-3.5" /> },
-  { value: 'name', label: '名前順', icon: <ArrowDownAZ className="h-3.5 w-3.5" /> },
+const SORT_OPTIONS: Array<{ value: RestaurantSort; label: string }> = [
+  { value: 'recent', label: '新着順' },
+  { value: 'rating-high', label: '評価が高い順' },
+  { value: 'name', label: '名前順' },
 ]
 
 export function RestaurantList() {
@@ -39,7 +39,7 @@ export function RestaurantList() {
   const [priceRange, setPriceRange] = useState<string>(ALL)
   const [minOverall, setMinOverall] = useState<string>(ALL)
   const [sort, setSort] = useState<RestaurantSort>('recent')
-  const [limit, setLimit] = useState(PAGE_SIZE)
+  const [limit, setLimit] = useState(LIST_PAGE_SIZE)
 
   const debouncedQuery = useDebounced(query, 300)
 
@@ -56,17 +56,17 @@ export function RestaurantList() {
   )
 
   const restaurantsQuery = useQuery({
-    queryKey: ['restaurants', filters],
+    queryKey: qk.restaurants.list(filters),
     queryFn: () => listRestaurants(filters),
   })
 
   const genresQuery = useQuery({
-    queryKey: ['genres'],
+    queryKey: qk.genres.all,
     queryFn: listGenres,
   })
 
   // フィルタを変えたら page を 1 に戻す
-  const resetLimit = () => setLimit(PAGE_SIZE)
+  const resetLimit = () => setLimit(LIST_PAGE_SIZE)
 
   const restaurants = restaurantsQuery.data ?? []
   const hasMore = restaurants.length === limit
@@ -178,7 +178,7 @@ export function RestaurantList() {
 
       {hasMore && (
         <div className="pt-2 text-center">
-          <Button variant="outline" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+          <Button variant="outline" onClick={() => setLimit((n) => n + LIST_PAGE_SIZE)}>
             もっと見る
           </Button>
         </div>

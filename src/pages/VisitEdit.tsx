@@ -1,11 +1,11 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { getRestaurant } from '@/features/restaurants/api'
 import { getVisit, updateVisit, type VisitInput } from '@/features/visits/api'
 import { VisitForm, type VisitFormInitial } from '@/features/visits/VisitForm'
-import { Button } from '@/components/ui/button'
+import { BackButton } from '@/components/BackButton'
+import { invalidateAfterVisitChange, qk } from '@/lib/queryKeys'
 
 export function VisitEdit() {
   const { id = '', visitId = '' } = useParams<{ id: string; visitId: string }>()
@@ -14,13 +14,13 @@ export function VisitEdit() {
   const queryClient = useQueryClient()
 
   const restaurantQuery = useQuery({
-    queryKey: ['restaurant', id],
+    queryKey: qk.restaurants.detail(id),
     queryFn: () => getRestaurant(id),
     enabled: !!id,
   })
 
   const visitQuery = useQuery({
-    queryKey: ['visit', visitId],
+    queryKey: qk.visits.detail(visitId),
     queryFn: () => getVisit(visitId),
     enabled: !!visitId,
   })
@@ -28,11 +28,8 @@ export function VisitEdit() {
   const updateMut = useMutation({
     mutationFn: (input: VisitInput) => updateVisit(visitId, input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['visits', 'restaurant', id] })
-      queryClient.invalidateQueries({ queryKey: ['visit', visitId] })
-      queryClient.invalidateQueries({ queryKey: ['restaurant', id] })
-      queryClient.invalidateQueries({ queryKey: ['restaurants'] })
-      queryClient.invalidateQueries({ queryKey: ['visits', 'user'] })
+      invalidateAfterVisitChange(queryClient, id)
+      queryClient.invalidateQueries({ queryKey: qk.visits.detail(visitId) })
       navigate(`/restaurants/${id}`, { replace: true })
     },
   })
@@ -71,9 +68,7 @@ export function VisitEdit() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="-ml-2">
-        <ChevronLeft className="h-4 w-4" /> 戻る
-      </Button>
+      <BackButton />
       <header>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">訪問を編集</h1>
         <p className="mt-1 text-base text-muted-foreground">

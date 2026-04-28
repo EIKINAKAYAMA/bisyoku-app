@@ -45,8 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   /**
-   * profile と auth.users.user_metadata（Google から来る）に差分があれば DB を更新。
-   * Google アイコン・名前を最新化する。失敗してもログインを止めない。
+   * profile と auth.users.user_metadata（Google から来る）の avatar_url に差分があれば
+   * DB を更新する。display_name はユーザー編集を尊重するため自動同期しない。
+   * 失敗してもログインを止めない。
    */
   const syncFromAuthMeta = async (
     current: Profile | null,
@@ -103,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (cancelled || activeUserId !== userId) return
           log(source, '✓ profile loaded:', p?.display_name ?? '(no row)')
 
-          // Google の最新 avatar_url / display_name と差分があれば profile を同期
+          // Google の最新 avatar_url と差分があれば profile を同期（display_name はユーザー編集尊重）
           const synced = await syncFromAuthMeta(p, next)
           if (cancelled || activeUserId !== userId) return
 

@@ -10,6 +10,19 @@ export function Login() {
   const { signInWithGoogle } = useAuth()
   const [params] = useSearchParams()
   const error = params.get('error')
+  const [signInError, setSignInError] = useState<string | null>(null)
+  const [signingIn, setSigningIn] = useState(false)
+
+  const handleGoogleSignIn = async () => {
+    setSignInError(null)
+    setSigningIn(true)
+    try {
+      await signInWithGoogle()
+    } catch (e) {
+      setSignInError((e as Error).message)
+      setSigningIn(false)
+    }
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary/5 via-background to-accent/10 p-4">
@@ -36,8 +49,13 @@ export function Login() {
               合言葉が違います。再度お試しください。
             </p>
           )}
-          <Button className="w-full" onClick={() => signInWithGoogle()}>
-            Google でログイン
+          {signInError && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              ログインに失敗しました：{signInError}
+            </p>
+          )}
+          <Button className="w-full" onClick={handleGoogleSignIn} disabled={signingIn}>
+            {signingIn ? '...' : 'Google でログイン'}
           </Button>
           <p className="text-center text-sm text-muted-foreground">
             初めての方は{' '}

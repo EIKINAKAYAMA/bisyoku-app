@@ -1,13 +1,11 @@
 import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { clearSignupIntent, setSignupIntent } from '@/features/auth/signupIntent'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-
-const PASSPHRASE_KEY = 'signup_passphrase'
-const INTENT_KEY = 'auth_intent'
 
 export function Signup() {
   const { signInWithGoogle } = useAuth()
@@ -18,14 +16,12 @@ export function Signup() {
     e.preventDefault()
     if (!passphrase.trim()) return
     setSubmitting(true)
-    sessionStorage.setItem(PASSPHRASE_KEY, passphrase)
-    sessionStorage.setItem(INTENT_KEY, 'signup')
+    setSignupIntent(passphrase)
     try {
       await signInWithGoogle()
     } catch (err) {
       console.error(err)
-      sessionStorage.removeItem(PASSPHRASE_KEY)
-      sessionStorage.removeItem(INTENT_KEY)
+      clearSignupIntent()
       setSubmitting(false)
     }
   }

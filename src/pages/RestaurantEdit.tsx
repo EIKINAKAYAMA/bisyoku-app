@@ -1,6 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
 import {
   getRestaurant,
@@ -11,7 +10,8 @@ import {
   RestaurantForm,
   type RestaurantFormInitial,
 } from '@/features/restaurants/RestaurantForm'
-import { Button } from '@/components/ui/button'
+import { BackButton } from '@/components/BackButton'
+import { qk } from '@/lib/queryKeys'
 
 export function RestaurantEdit() {
   const { id = '' } = useParams<{ id: string }>()
@@ -20,7 +20,7 @@ export function RestaurantEdit() {
   const queryClient = useQueryClient()
 
   const restaurantQuery = useQuery({
-    queryKey: ['restaurant', id],
+    queryKey: qk.restaurants.detail(id),
     queryFn: () => getRestaurant(id),
     enabled: !!id,
   })
@@ -28,8 +28,8 @@ export function RestaurantEdit() {
   const updateMut = useMutation({
     mutationFn: (input: CreateRestaurantInput) => updateRestaurant(id, input),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['restaurant', id] })
-      queryClient.invalidateQueries({ queryKey: ['restaurants'] })
+      queryClient.invalidateQueries({ queryKey: qk.restaurants.detail(id) })
+      queryClient.invalidateQueries({ queryKey: qk.restaurants.all })
       navigate(`/restaurants/${id}`, { replace: true })
     },
   })
@@ -57,9 +57,7 @@ export function RestaurantEdit() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="-ml-2">
-        <ChevronLeft className="h-4 w-4" /> 戻る
-      </Button>
+      <BackButton />
       <header>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">店舗を編集</h1>
         <p className="mt-1 text-sm text-muted-foreground">

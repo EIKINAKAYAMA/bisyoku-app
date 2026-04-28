@@ -2,9 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/features/auth/AuthProvider'
-
-const PASSPHRASE_KEY = 'signup_passphrase'
-const INTENT_KEY = 'auth_intent'
+import { clearSignupIntent, readSignupIntent } from '@/features/auth/signupIntent'
 
 type Status = 'verifying' | 'fail' | 'done'
 
@@ -20,14 +18,13 @@ export function AuthCallback() {
     ran.current = true
 
     void (async () => {
-      const { data: sessionData } = await supabase.auth.getSession()
-      const session = sessionData.session
+      let { data: sessionData } = await supabase.auth.getSession()
 
-      if (!session) {
+      if (!sessionData.session) {
         // Supabase JS が detectSessionInUrl で処理する前に届くケース。少し待ってリトライ。
         await new Promise((r) => setTimeout(r, 500))
-        const retry = await supabase.auth.getSession()
-        if (!retry.data.session) {
+        sessionData = (await supabase.auth.getSession()).data
+        if (!sessionData.session) {
           setStatus('fail')
           setMessage('セッションが取得できませんでした。')
           setTimeout(() => navigate('/login', { replace: true }), 1500)
@@ -35,8 +32,7 @@ export function AuthCallback() {
         }
       }
 
-      const intent = sessionStorage.getItem(INTENT_KEY)
-      const passphrase = sessionStorage.getItem(PASSPHRASE_KEY)
+      const { intent, passphrase } = readSignupIntent()
 
       if (intent === 'signup' && passphrase) {
         const { data, error } = await supabase.functions.invoke<{
@@ -46,8 +42,7 @@ export function AuthCallback() {
           body: { passphrase },
         })
 
-        sessionStorage.removeItem(INTENT_KEY)
-        sessionStorage.removeItem(PASSPHRASE_KEY)
+        clearSignupIntent()
 
         if (error || !data?.ok) {
           await supabase.auth.signOut()

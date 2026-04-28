@@ -1,13 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  ChevronLeft,
-  ExternalLink,
-  Pencil,
-  Plus,
-  Trash2,
-} from 'lucide-react'
+import { ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react'
 import {
   countVisitsForRestaurant,
   deleteRestaurant,
@@ -16,38 +10,38 @@ import {
 import { deleteVisit, listVisitsForRestaurant } from '@/features/visits/api'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { VisitItem } from '@/features/visits/VisitItem'
+import { BackButton } from '@/components/BackButton'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { RATING_AXES } from '@/lib/constants'
+import { LIST_PAGE_SIZE, RATING_AXES } from '@/lib/constants'
+import { invalidateAfterVisitChange, qk } from '@/lib/queryKeys'
 import { ratingTone } from '@/lib/rating'
-
-const PAGE_SIZE = 30
 
 export function RestaurantDetail() {
   const { id = '' } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { user } = useAuth()
   const queryClient = useQueryClient()
-  const [limit, setLimit] = useState(PAGE_SIZE)
+  const [limit, setLimit] = useState(LIST_PAGE_SIZE)
   const [restaurantConfirmOpen, setRestaurantConfirmOpen] = useState(false)
   const [visitToDelete, setVisitToDelete] = useState<string | null>(null)
 
   const restaurantQuery = useQuery({
-    queryKey: ['restaurant', id],
+    queryKey: qk.restaurants.detail(id),
     queryFn: () => getRestaurant(id),
     enabled: !!id,
   })
 
   const visitsQuery = useQuery({
-    queryKey: ['visits', 'restaurant', id, limit],
+    queryKey: qk.visits.forRestaurantPaged(id, limit),
     queryFn: () => listVisitsForRestaurant(id, { limit }),
     enabled: !!id,
   })
 
   // 訪問件数（削除確認に表示する）
   const visitCountQuery = useQuery({
-    queryKey: ['visits', 'count', id],
+    queryKey: qk.visits.countForRestaurant(id),
     queryFn: () => countVisitsForRestaurant(id),
     enabled: !!id,
   })
@@ -55,11 +49,7 @@ export function RestaurantDetail() {
   const deleteVisitMut = useMutation({
     mutationFn: (visitId: string) => deleteVisit(visitId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['visits', 'restaurant', id] })
-      queryClient.invalidateQueries({ queryKey: ['visits', 'count', id] })
-      queryClient.invalidateQueries({ queryKey: ['restaurant', id] })
-      queryClient.invalidateQueries({ queryKey: ['restaurants'] })
-      queryClient.invalidateQueries({ queryKey: ['visits', 'user'] })
+      invalidateAfterVisitChange(queryClient, id)
       setVisitToDelete(null)
     },
   })
@@ -67,8 +57,8 @@ export function RestaurantDetail() {
   const deleteRestaurantMut = useMutation({
     mutationFn: () => deleteRestaurant(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['restaurants'] })
-      queryClient.invalidateQueries({ queryKey: ['visits', 'user'] })
+      queryClient.invalidateQueries({ queryKey: qk.restaurants.all })
+      queryClient.invalidateQueries({ queryKey: qk.visits.allForUsers })
       navigate('/', { replace: true })
     },
   })
@@ -88,9 +78,7 @@ export function RestaurantDetail() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="-ml-2">
-        <ChevronLeft className="h-4 w-4" /> 戻る
-      </Button>
+      <BackButton />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_2fr]">
         <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">
@@ -195,7 +183,7 @@ export function RestaurantDetail() {
 
           {hasMore && (
             <div className="pt-2 text-center">
-              <Button variant="outline" onClick={() => setLimit((n) => n + PAGE_SIZE)}>
+              <Button variant="outline" onClick={() => setLimit((n) => n + LIST_PAGE_SIZE)}>
                 もっと見る
               </Button>
             </div>

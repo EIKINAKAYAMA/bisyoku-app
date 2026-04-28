@@ -5,7 +5,8 @@
 - 招待制サインアップ：Google SSO + 合言葉
 - 店舗マスタは共有、訪問・5 軸 10 段階評価はユーザー個別
 - 訪問なしの「店舗だけ登録」も可
-- 店名 / ジャンル / 価格帯 / 評価でフィルタ
+- 訪問記録に注文内容 / 支払金額 / コメントを任意で残せる
+- 店名 / ジャンル / 価格帯 / 評価でフィルタ、新着順 / 評価順 / 名前順で並び替え
 - スマホ中心利用 → PWA + レスポンシブ
 - 写真・動画アップロードは対象外（Free Tier 容量保護のため）
 
@@ -15,7 +16,8 @@
 
 ## 技術スタック
 
-- **Frontend**：React 18 + Vite 5 + TypeScript / Tailwind CSS + shadcn/ui / TanStack Query / React Hook Form + Zod / React Router (HashRouter)
+- **Frontend**：React 18 + Vite 7 + TypeScript / Tailwind CSS + shadcn/ui / TanStack Query / React Hook Form + Zod / React Router (HashRouter)
+- **Bundle**：`React.lazy` によるルート単位の code splitting + `manualChunks` で vendor 分離（`vite.config.ts`）
 - **PWA**：vite-plugin-pwa（Workbox）
 - **Backend**：Supabase（Postgres + Auth + Edge Functions）
 - **Hosting**：GitHub Pages
@@ -434,16 +436,21 @@ API からは起こせない仕様です（手動 Restore のみ）。
 ├── .github/workflows/         CI / Deploy / Keepalive
 ├── public/                    静的アセット・PWA アイコン
 ├── src/
-│   ├── components/            汎用コンポーネント（shadcn/ui を含む）
+│   ├── components/            汎用コンポーネント（BackButton / ConfirmDialog / GenreField / AppLayout）
+│   │   └── ui/                shadcn/ui ベースのプリミティブ
 │   ├── features/              機能単位のモジュール（auth / restaurants / visits / genres / users）
-│   ├── lib/                   Supabase クライアント等
+│   ├── hooks/                 useDebounced 等の汎用フック
+│   ├── lib/                   Supabase クライアント / TanStack Query / queryKeys ファクトリ / 定数 / utils
 │   ├── pages/                 ルートに対応するページ
-│   ├── types/                 共有型・DB 型
+│   ├── test/                  Vitest setup
+│   ├── types/                 共有型・DB 型（`supabase gen types` 生成物）
 │   └── App.tsx, main.tsx, ...
 ├── supabase/
 │   ├── migrations/            SQL マイグレーション
 │   ├── functions/
+│   │   ├── _shared/cors.ts
 │   │   └── verify-passphrase/ 招待制サインアップの合言葉検証 Edge Function
+│   ├── seed.sql               ローカル専用：dev1 / dev2 ユーザーを seed（本番には流れない）
 │   └── config.toml            ローカル開発設定
 ├── CLAUDE.md                  設計方針・アーキテクチャ・データモデル・RLS の詳細
 └── README.md                  本ファイル

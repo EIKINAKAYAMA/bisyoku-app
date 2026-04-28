@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { listGenres, createGenre } from '@/features/genres/api'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { qk } from '@/lib/queryKeys'
 
 type Props = {
   value: string | undefined
@@ -26,7 +27,7 @@ export function GenreField({ value, onChange }: Props) {
   const [error, setError] = useState<string | null>(null)
 
   const genresQuery = useQuery({
-    queryKey: ['genres'],
+    queryKey: qk.genres.all,
     queryFn: listGenres,
   })
 
@@ -36,7 +37,7 @@ export function GenreField({ value, onChange }: Props) {
       return createGenre(name, user.id)
     },
     onSuccess: (genre) => {
-      queryClient.invalidateQueries({ queryKey: ['genres'] })
+      queryClient.invalidateQueries({ queryKey: qk.genres.all })
       onChange(genre.id)
       setAdding(false)
       setNewName('')

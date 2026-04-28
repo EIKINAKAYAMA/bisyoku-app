@@ -8,6 +8,9 @@ export const PRICE_RANGES = [
 
 export type PriceRange = (typeof PRICE_RANGES)[number]
 
+/** 一覧系ページの 1 ページ分件数。「もっと見る」で +PAGE_SIZE する。 */
+export const LIST_PAGE_SIZE = 30
+
 export const RATING_AXES = [
   { key: 'overall', label: '総合' },
   { key: 'food', label: '料理' },

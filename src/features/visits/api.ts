@@ -19,6 +19,17 @@ export type VisitWithRestaurant = Visit & {
   } | null
 }
 
+// PostgREST は visits.ratings 埋め込みを relationship の型に応じて
+// 単体オブジェクトまたは配列で返してくる（生成型では配列扱い）。
+// どちらでも 0..1 件として扱えるように先頭要素だけ取り出して正規化する。
+type RawRating = Rating[] | Rating | null
+function pickRating<T extends { rating: RawRating }>(
+  row: T
+): Omit<T, 'rating'> & { rating: Rating | null } {
+  const r = row.rating
+  return { ...row, rating: Array.isArray(r) ? (r[0] ?? null) : r }
+}
+
 export async function listVisitsForRestaurant(
   restaurantId: string,
   opts: { limit?: number; offset?: number } = {}
@@ -37,16 +48,9 @@ export async function listVisitsForRestaurant(
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
   if (error) throw error
-  const rows = (data ?? []) as unknown as Array<
-    Visit & {
-      rating: Rating[] | Rating | null
-      user: { id: string; display_name: string; avatar_url: string | null } | null
-    }
-  >
-  return rows.map((row) => ({
-    ...row,
-    rating: Array.isArray(row.rating) ? (row.rating[0] ?? null) : row.rating,
-  }))
+  return (data ?? []).map((row) =>
+    pickRating(row as unknown as Visit & { rating: RawRating; user: VisitWithRatingAndUser['user'] })
+  )
 }
 
 export async function listVisitsForUser(
@@ -67,16 +71,11 @@ export async function listVisitsForUser(
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
   if (error) throw error
-  const rows = (data ?? []) as unknown as Array<
-    Visit & {
-      rating: Rating[] | Rating | null
-      restaurant: VisitWithRestaurant['restaurant']
-    }
-  >
-  return rows.map((row) => ({
-    ...row,
-    rating: Array.isArray(row.rating) ? (row.rating[0] ?? null) : row.rating,
-  }))
+  return (data ?? []).map((row) =>
+    pickRating(
+      row as unknown as Visit & { rating: RawRating; restaurant: VisitWithRestaurant['restaurant'] }
+    )
+  )
 }
 
 export type RatingInput = {
@@ -105,11 +104,7 @@ export async function getVisit(
     .maybeSingle()
   if (error) throw error
   if (!data) return null
-  const row = data as unknown as Visit & { rating: Rating[] | Rating | null }
-  return {
-    ...row,
-    rating: Array.isArray(row.rating) ? (row.rating[0] ?? null) : row.rating,
-  }
+  return pickRating(data as unknown as Visit & { rating: RawRating })
 }
 
 export async function createVisit(
@@ -154,29 +149,14 @@ export async function updateVisit(visitId: string, input: VisitInput) {
     .eq('id', visitId)
   if (visitError) throw visitError
 
-  // 評価：既存をチェック → upsert または delete
-  const { data: existing, error: getError } = await supabase
-    .from('ratings')
-    .select('id')
-    .eq('visit_id', visitId)
-    .maybeSingle()
-  if (getError) throw getError
-
+  // 評価：rating が来ていれば upsert、無ければ削除（評価を外す）
+  // visit_id は UNIQUE 制約があるので onConflict で 1 行に収束する。
   if (input.rating) {
-    if (existing) {
-      const { error } = await supabase
-        .from('ratings')
-        .update(input.rating)
-        .eq('visit_id', visitId)
-      if (error) throw error
-    } else {
-      const { error } = await supabase
-        .from('ratings')
-        .insert({ visit_id: visitId, ...input.rating })
-      if (error) throw error
-    }
-  } else if (existing) {
-    // 評価を外す
+    const { error } = await supabase
+      .from('ratings')
+      .upsert({ visit_id: visitId, ...input.rating }, { onConflict: 'visit_id' })
+    if (error) throw error
+  } else {
     const { error } = await supabase.from('ratings').delete().eq('visit_id', visitId)
     if (error) throw error
   }

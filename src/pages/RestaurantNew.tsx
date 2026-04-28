@@ -1,10 +1,10 @@
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft } from 'lucide-react'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { createRestaurant, type CreateRestaurantInput } from '@/features/restaurants/api'
 import { RestaurantForm } from '@/features/restaurants/RestaurantForm'
-import { Button } from '@/components/ui/button'
+import { BackButton } from '@/components/BackButton'
+import { qk } from '@/lib/queryKeys'
 
 export function RestaurantNew() {
   const navigate = useNavigate()
@@ -17,16 +17,14 @@ export function RestaurantNew() {
       return createRestaurant(input, user.id)
     },
     onSuccess: (restaurant) => {
-      queryClient.invalidateQueries({ queryKey: ['restaurants'] })
+      queryClient.invalidateQueries({ queryKey: qk.restaurants.all })
       navigate(`/restaurants/${restaurant.id}`, { replace: true })
     },
   })
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="-ml-2">
-        <ChevronLeft className="h-4 w-4" /> 戻る
-      </Button>
+      <BackButton />
       <header>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">店舗を登録</h1>
         <p className="mt-1 text-sm text-muted-foreground">

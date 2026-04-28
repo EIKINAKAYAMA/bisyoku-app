@@ -53,6 +53,8 @@ export async function listRestaurants(
 
   // restaurants と summary を並列で取得し、クライアント側で merge
   // （VIEW には FK が無いため PostgREST の自動 embed が効かない）
+  // フィルタ前の summary を全件取るが、家族・友人グループ規模では行数も少なく
+  // 1 ラウンドトリップ削減のメリットの方が大きい。
   const [restaurantsResult, summariesResult] = await Promise.all([
     restaurantsQuery,
     supabase.from('restaurant_rating_summary').select('*'),
@@ -86,18 +88,6 @@ export async function listRestaurants(
   const offset = filters.offset ?? 0
   const limit = filters.limit ?? 50
   return mapped.slice(offset, offset + limit)
-}
-
-export async function countRestaurants(
-  filters: Omit<RestaurantFilters, 'sort' | 'limit' | 'offset'> = {}
-): Promise<number> {
-  let q = supabase.from('restaurants').select('*', { count: 'exact', head: true })
-  if (filters.query) q = q.ilike('name', `%${filters.query}%`)
-  if (filters.genreId) q = q.eq('genre_id', filters.genreId)
-  if (filters.priceRange) q = q.eq('price_range', filters.priceRange)
-  const { count, error } = await q
-  if (error) throw error
-  return count ?? 0
 }
 
 export async function getRestaurant(id: string): Promise<RestaurantWithSummary | null> {

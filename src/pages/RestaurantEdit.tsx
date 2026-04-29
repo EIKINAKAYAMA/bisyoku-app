@@ -55,6 +55,7 @@ export function RestaurantEdit() {
     price_range: restaurantQuery.data.price_range,
     google_maps_url: restaurantQuery.data.google_maps_url,
     tabelog_url: restaurantQuery.data.tabelog_url,
+    area: restaurantQuery.data.area,
   }
 
   return (

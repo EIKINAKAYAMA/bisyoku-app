@@ -1,6 +1,8 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
 import type { PriceRange } from '@/lib/constants'
+import { extractCoordsFromMapsUrl } from './mapsUrl'
+import { haversineKm } from './distance'
 
 export type Restaurant = Database['public']['Tables']['restaurants']['Row']
 export type RatingSummary = Database['public']['Views']['restaurant_rating_summary']['Row']
@@ -8,15 +10,20 @@ export type RatingSummary = Database['public']['Views']['restaurant_rating_summa
 export type RestaurantWithSummary = Restaurant & {
   genre: { id: string; name: string } | null
   summary: RatingSummary | null
+  /** ユーザー位置からの距離 (km)。nearby フィルタ／sort='nearby' 指定時のみ算出。 */
+  distanceKm: number | null
 }
 
-export type RestaurantSort = 'recent' | 'name' | 'rating-high'
+export type RestaurantSort = 'recent' | 'name' | 'rating-high' | 'nearby'
 
 export type RestaurantFilters = {
   query?: string
   genreId?: string
   priceRange?: PriceRange
   minOverall?: number
+  area?: string
+  /** 近い順ソート／距離表示の起点。sort='nearby' のときに必要。 */
+  userLocation?: { lat: number; lng: number }
   sort?: RestaurantSort
   limit?: number
   offset?: number
@@ -36,6 +43,9 @@ export async function listRestaurants(
   if (filters.priceRange) {
     restaurantsQuery = restaurantsQuery.eq('price_range', filters.priceRange)
   }
+  if (filters.area) {
+    restaurantsQuery = restaurantsQuery.eq('area', filters.area)
+  }
 
   // 並び順
   switch (filters.sort) {
@@ -43,7 +53,8 @@ export async function listRestaurants(
       restaurantsQuery = restaurantsQuery.order('name', { ascending: true })
       break
     case 'rating-high':
-      // VIEW は FK 経由で並べられないので一旦 created_at で取り、後でクライアント側ソート
+    case 'nearby':
+      // VIEW / 計算列は DB 側で並べられないので一旦 created_at で取り、後でクライアント側ソート
       restaurantsQuery = restaurantsQuery.order('created_at', { ascending: false })
       break
     case 'recent':
@@ -68,10 +79,18 @@ export async function listRestaurants(
     if (s.restaurant_id) summaryMap.set(s.restaurant_id, s)
   }
 
-  let mapped = (restaurantsResult.data ?? []).map<RestaurantWithSummary>((row) => ({
-    ...row,
-    summary: summaryMap.get(row.id) ?? null,
-  }))
+  let mapped = (restaurantsResult.data ?? []).map<RestaurantWithSummary>((row) => {
+    const coords = extractCoordsFromMapsUrl(row.google_maps_url)
+    const distanceKm =
+      filters.userLocation && coords
+        ? haversineKm(filters.userLocation, coords)
+        : null
+    return {
+      ...row,
+      summary: summaryMap.get(row.id) ?? null,
+      distanceKm,
+    }
+  })
 
   if (filters.minOverall != null) {
     mapped = mapped.filter((r) => (r.summary?.avg_overall ?? 0) >= filters.minOverall!)
@@ -81,6 +100,14 @@ export async function listRestaurants(
     mapped.sort(
       (a, b) => (b.summary?.avg_overall ?? -1) - (a.summary?.avg_overall ?? -1)
     )
+  }
+  if (filters.sort === 'nearby') {
+    // 座標が取れない店（短縮 URL 等）は距離不明として末尾に。
+    mapped.sort((a, b) => {
+      const ad = a.distanceKm ?? Number.POSITIVE_INFINITY
+      const bd = b.distanceKm ?? Number.POSITIVE_INFINITY
+      return ad - bd
+    })
   }
 
   // ページング（クライアント側で適用：minOverall フィルタや rating-high ソートが
@@ -111,6 +138,7 @@ export async function getRestaurant(id: string): Promise<RestaurantWithSummary |
   return {
     ...restaurantResult.data,
     summary: summaryResult.data ?? null,
+    distanceKm: null,
   }
 }
 
@@ -121,6 +149,7 @@ export type CreateRestaurantInput = {
   price_range: PriceRange
   google_maps_url: string | null
   tabelog_url: string | null
+  area: string | null
 }
 
 export async function createRestaurant(
@@ -154,6 +183,24 @@ export async function deleteRestaurant(id: string): Promise<void> {
   // visits → ratings は ON DELETE CASCADE で連鎖削除される
   const { error } = await supabase.from('restaurants').delete().eq('id', id)
   if (error) throw error
+}
+
+/**
+ * 登録済み店舗の area 一覧（重複なし、五十音/アルファベット順）を返す。
+ * 一覧ページの「エリア」フィルタの選択肢を組み立てるために使う。
+ * 件数が少ない（家族・友人グループ規模）ので全件取って集計する。
+ */
+export async function listRestaurantAreas(): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('restaurants')
+    .select('area')
+    .not('area', 'is', null)
+  if (error) throw error
+  const set = new Set<string>()
+  for (const row of data ?? []) {
+    if (row.area) set.add(row.area)
+  }
+  return [...set].sort((a, b) => a.localeCompare(b, 'ja'))
 }
 
 export async function countVisitsForRestaurant(restaurantId: string): Promise<number> {

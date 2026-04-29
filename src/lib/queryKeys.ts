@@ -18,6 +18,7 @@ export const qk = {
     all: ['restaurants'] as const,
     list: (filters: unknown) => ['restaurants', filters] as const,
     detail: (id: string) => ['restaurant', id] as const,
+    areas: ['restaurants', 'areas'] as const,
   },
   visits: {
     /** 全ての visits クエリ（restaurant・user・count 含む）を前方一致で無効化したい時 */

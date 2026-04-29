@@ -154,6 +154,7 @@ export type Database = {
       }
       restaurants: {
         Row: {
+          area: string | null
           created_at: string
           created_by: string | null
           genre_id: string
@@ -165,6 +166,7 @@ export type Database = {
           tabelog_url: string | null
         }
         Insert: {
+          area?: string | null
           created_at?: string
           created_by?: string | null
           genre_id: string
@@ -176,6 +178,7 @@ export type Database = {
           tabelog_url?: string | null
         }
         Update: {
+          area?: string | null
           created_at?: string
           created_by?: string | null
           genre_id?: string

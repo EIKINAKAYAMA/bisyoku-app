@@ -34,6 +34,7 @@ const schema = z.object({
   price_range: z.enum(PRICE_RANGES),
   google_maps_url: optionalUrl,
   tabelog_url: optionalUrl,
+  area: z.string().max(60).optional().or(z.literal('')),
 })
 type FormValues = z.infer<typeof schema>
 
@@ -44,6 +45,7 @@ export type RestaurantFormInitial = {
   price_range: (typeof PRICE_RANGES)[number]
   google_maps_url: string | null
   tabelog_url: string | null
+  area: string | null
 }
 
 type Props = {
@@ -65,6 +67,7 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
       price_range: initial?.price_range ?? '〜2000',
       google_maps_url: initial?.google_maps_url ?? '',
       tabelog_url: initial?.tabelog_url ?? '',
+      area: initial?.area ?? '',
     },
   })
 
@@ -81,6 +84,7 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
           ? values.google_maps_url.trim()
           : null,
         tabelog_url: values.tabelog_url?.trim() ? values.tabelog_url.trim() : null,
+        area: values.area?.trim() ? values.area.trim() : null,
       })
     } catch (e) {
       setTopError((e as Error).message)
@@ -136,6 +140,23 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
       </div>
 
       <div className="space-y-2">
+        <Label htmlFor="area" className="text-base">
+          エリア（任意）
+        </Label>
+        <Input
+          id="area"
+          placeholder="例: 渋谷 / 自由が丘 / 横浜駅周辺"
+          {...form.register('area')}
+        />
+        <p className="text-xs text-muted-foreground">
+          一覧のエリア絞り込みに使います。短いラベルで OK。
+        </p>
+        {form.formState.errors.area && (
+          <p className="text-sm text-destructive">{form.formState.errors.area.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
         <Label htmlFor="google_maps_url" className="text-base">
           Google Maps の URL（任意）
         </Label>
@@ -146,12 +167,8 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
           {...form.register('google_maps_url')}
         />
         <p className="text-xs text-muted-foreground">
-          Google Maps で店舗ページを開き、「共有」→「リンクをコピー」で取得できます。
-          詳細画面の <strong>Google Maps ボタン</strong> がこの URL を直接開き、
-          地図のピンも URL から座標を抽出して表示します。
-          <br />
-          ⚠ 短縮 URL（<code>maps.app.goo.gl/...</code>）でもボタンは動きますが、
-          地図プレビューは表示できません。フルパス URL を貼ると地図が出ます。
+          Google Maps で「共有」→「リンクをコピー」を貼り付け。
+          <strong>フルパス URL</strong> を貼ると地図プレビューと「近い順」の距離計算が有効になります（短縮 URL <code>maps.app.goo.gl/...</code> でもボタンは動作します）。
         </p>
         {form.formState.errors.google_maps_url && (
           <p className="text-sm text-destructive">

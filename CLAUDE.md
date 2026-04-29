@@ -1,362 +1,76 @@
 # bisyoku-app
 
-家族・友人グループ向けの飲食店レビュー SPA。完全無料運用が前提。
+家族・友人グループ向けの招待制 飲食店レビュー SPA。完全無料運用（GitHub Pages + Supabase Free Tier）。
 
-## プロダクト要件サマリ
+> **詳細仕様は [`docs/`](./docs/README.md) を正本として参照すること**。本ファイルは AI が最初に踏むエントリ。docs と内容が衝突したら docs を直してから実装する。
+> セットアップ・運用手順は [`README.md`](./README.md)。
 
-- 招待制（Google SSO + 合言葉）の小規模クローズドサービス
-- 店舗マスタは共有、訪問・評価はユーザー個別に紐付く
-- 評価は 5 軸 × 1〜10 段階（総合・料理・サービス・雰囲気・コスパ）
-- 訪問記録なしの「店舗のみ登録」も可（誰も行ったことのない店を先に登録できる）
-- 一覧は平均値表示、詳細で個別評価を確認
-- 各ユーザーが訪問した店舗の一覧ページを持つ
-- スマホ中心利用 → PWA 化必須、レスポンシブ必須
-- **写真・動画アップロードは対象外**（無料枠 Storage 容量の制約と、登録ハードルを下げる目的）
+## 仕様ドキュメント（docs/）の入り口
 
-詳細仕様は `README.md` を参照。
-
-## 技術スタック
-
-| レイヤ | 採用 |
+| 種類 | 何を読むか |
 |---|---|
-| 言語 | TypeScript |
-| フレームワーク | React 18 + Vite |
-| ルーティング | React Router v6（`HashRouter`：GitHub Pages のサブパス配信に最も堅牢） |
-| UI | Tailwind CSS + shadcn/ui |
-| フォーム/バリデーション | React Hook Form + Zod |
-| サーバ状態管理 | TanStack Query |
-| データ層 | Supabase（Postgres / Auth / Edge Functions） |
-| PWA | `vite-plugin-pwa`（Workbox） |
-| ホスティング | GitHub Pages（`actions/deploy-pages`） |
-| Lint / Format | ESLint + Prettier |
-| テスト | Vitest + React Testing Library（最小限） |
+| 全体像・スコープ | [`docs/00-overview.md`](./docs/00-overview.md) / [`docs/11-non-goals.md`](./docs/11-non-goals.md) |
+| アーキテクチャ・依存関係 | [`docs/01-architecture.md`](./docs/01-architecture.md) |
+| DB / RLS / マイグレーション | [`docs/02-data-model.md`](./docs/02-data-model.md) |
+| 認証フロー・Edge Function | [`docs/03-auth.md`](./docs/03-auth.md) |
+| ルート構成・ページ責務 | [`docs/04-routing.md`](./docs/04-routing.md) |
+| feature モジュール仕様 | [`docs/05-features.md`](./docs/05-features.md) |
+| 共通コンポーネント | [`docs/06-components.md`](./docs/06-components.md) |
+| TanStack Query / queryKeys | [`docs/07-state-management.md`](./docs/07-state-management.md) |
+| ディレクトリ・命名・規約 | [`docs/08-conventions.md`](./docs/08-conventions.md) |
+| Vite ビルド・PWA | [`docs/09-pwa-build.md`](./docs/09-pwa-build.md) |
+| CI/CD・環境変数・運用 | [`docs/10-infra-ops.md`](./docs/10-infra-ops.md) |
 
-## アーキテクチャ要点
+## 技術スタック（要点）
 
-### 認証フロー（招待制）
+- **言語**：TypeScript / **フレームワーク**：React 18 + Vite 7
+- **ルーティング**：React Router v6 `HashRouter`（GitHub Pages サブパス配信のため）
+- **UI**：Tailwind CSS + shadcn/ui（Radix）
+- **フォーム**：React Hook Form + Zod
+- **サーバ状態**：TanStack Query（キーは `src/lib/queryKeys.ts` の `qk` に集約）
+- **データ層**：`@supabase/supabase-js`（PostgREST 経由・RLS 必須）
+- **PWA**：vite-plugin-pwa（Workbox）
+- **ホスティング**：GitHub Pages、**CI/CD**：GitHub Actions
 
-SPA のコードは全てクライアントに露出するため、**合言葉は絶対にフロントへ埋め込まない**。
-また「Google で認証された本人のメール」と「合言葉を通したメール」を一致させるため、**合言葉照合は OAuth の後**に行う。
+## 作業を始める前のチェックリスト
 
-1. `/signup` で合言葉を入力 → クライアントが `sessionStorage` に保存：
-   - `auth_intent = 'signup'`
-   - `signup_passphrase = <入力値>`
-2. Google OAuth へリダイレクト
-3. コールバック後、クライアントは `auth_intent` を見て分岐：
-   - `'signup'` の場合：Edge Function `verify-passphrase` を呼び出す（`{ passphrase }` ＋ `Authorization: Bearer <access_token>`）→ 成功時 sessionStorage クリア
-   - それ以外（`/login` 経由）：`profiles` 存在チェック → 不在なら `signOut()` ＋ `/login?error=not-invited` へ
-4. Edge Function：JWT を検証 → email を抽出（**email 形式 regex で defensive validation**）→ 合言葉ハッシュ照合
-   - OK：`allowed_emails` 追加 ＋ `profiles` 作成（`display_name` / `avatar_url` を `auth.users.raw_user_meta_data` の `full_name` / `avatar_url` から自動コピー）
-   - NG：`supabase.auth.admin.deleteUser(user_id)` で巻き戻し → クライアント側で `supabase.auth.signOut()` ＋ エラー表示 ＋ `/signup` 再試行へ遷移
-5. 通常ログインは `/login` で Google OAuth のみ
-6. ログイン後の権限判定は「`profiles` レコードが存在すること」で行う（RLS で `EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid())` を共通条件にする）
-7. **Avatar 自動同期**：ログイン時に Google の `user_metadata.avatar_url` / `picture` と `profiles.avatar_url` を比較し、差分があれば `profiles` を更新する（`AuthProvider.syncFromAuthMeta`）。`display_name` はユーザー編集を尊重するため自動同期しない
+新機能・修正に着手する前に：
 
-**Edge Function の CORS**：GitHub Pages → `*.supabase.co` は別オリジン。`verify-passphrase` 内で以下を明示する必要がある（書かないとブラウザに弾かれる）：
+1. [`docs/00-overview.md`](./docs/00-overview.md) と [`docs/11-non-goals.md`](./docs/11-non-goals.md) を読み、スコープに収まる提案かを判断する
+2. DB を触るなら [`docs/02-data-model.md`](./docs/02-data-model.md) を読み、RLS の共通条件 `is_invited_user()` を逸脱しないことを確認
+3. データ取得・更新を書くなら [`docs/07-state-management.md`](./docs/07-state-management.md) の `qk` ファクトリと `invalidateAfterVisitChange` を必ず使う
+4. UI を作るなら [`docs/06-components.md`](./docs/06-components.md) の既存プリミティブを再利用してから新規作成を検討
 
-```ts
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-// OPTIONS プリフライトには 200 + corsHeaders を即返す
-```
+## ハードルール（絶対に守る）
 
-**判明しているエッジケース（仕様として割り切る）**：
+これらは過去の事故・設計判断に紐付くので、提案・実装の段階で必ず守る：
 
-- **OAuth リダイレクト中にタブを閉じる / 別タブで戻る** → sessionStorage 上の合言葉が失われ、コールバック分岐が `'signup'` でなくなる。クライアントは「`profile` 不在 ＋ 合言葉なし」を検知したらサインアウトし `/signup` に戻す。家族・友人運用前提なので追加対策はしない。
-- **孤児 `auth.users`**（OAuth 通過後に `verify-passphrase` 完了せず離脱）はクリーンアップしない。無料枠の DB 容量を圧迫しないため放置。
-- **`genres` 同時作成 race（UNIQUE 違反）** → クライアントは挿入失敗を検知したら「すでに存在します。再選択してください」を表示し、`genres` を refetch して既存値を選ばせる。サーバ側は何もしない。
+- **合言葉・Service Role Key などの秘匿値をフロントの `import.meta.env` で読まない**。`VITE_PUBLIC_*` 以外は禁止（[`docs/03-auth.md`](./docs/03-auth.md)、[`docs/10-infra-ops.md`](./docs/10-infra-ops.md)）
+- **コンポーネントから `supabase` SDK を直接呼ばない**。必ず `src/features/<x>/api.ts` を経由（[`docs/05-features.md`](./docs/05-features.md)）
+- **queryKey を文字列リテラルで書かない**。`qk` ファクトリ経由（[`docs/07-state-management.md`](./docs/07-state-management.md)）
+- **訪問・評価変更後の invalidation は `invalidateAfterVisitChange(qc, restaurantId)` 一発**。`invalidateQueries` を 5 連発書かない
+- **写真・動画のアップロード機能を追加しない**（Free Tier 容量保護＋登録ハードル抑制、[`docs/11-non-goals.md`](./docs/11-non-goals.md)）
+- **集計（avg / count）はクライアントでループしない**。`restaurant_rating_summary` VIEW を使う
+- **vendor chunk を細かく分けない**。React 依存パッケージは同一 chunk に集約（過去の `forwardRef` undefined 事故、[`docs/09-pwa-build.md`](./docs/09-pwa-build.md)）
 
-**合言葉ハッシュの方式**：守るべきは単一の固定値（DB のパスワード一覧ではない）。argon2/bcrypt のような外部依存は不要で、Edge Function 内で `crypto.subtle.digest('SHA-256', ...)` ＋ ソルト ＋ 定数時間比較で十分。Secret には `SIGNUP_PASSPHRASE_HASH`（hex 文字列）と `SIGNUP_PASSPHRASE_SALT` を別々に登録する。
-
-**OAuth の URL 設定は 2 箇所**（どちらか片方だけ忘れると確実に動かない）：
-
-1. **Google Cloud Console**（OAuth 2.0 Client の Authorized redirect URIs）
-   - `https://<project-ref>.supabase.co/auth/v1/callback`（本番 Supabase）
-   - `http://127.0.0.1:54321/auth/v1/callback`（ローカル Supabase）
-
-2. **Supabase ダッシュボード**（Authentication → URL Configuration）
-   - Site URL：`https://<github-user>.github.io/bisyoku-app/`
-   - Additional Redirect URLs：`http://127.0.0.1:5173/`
-
-### データモデル（初期案）
-
-```
-profiles            -- auth.users と 1:1
-  id            uuid PK = auth.users.id   ON DELETE CASCADE
-  display_name  text NOT NULL
-  avatar_url    text
-  created_at    timestamptz DEFAULT now()
-
-allowed_emails      -- 招待許諾リスト（Edge Function だけが書き込める）
-  email         text PK
-  created_at    timestamptz DEFAULT now()
-
-genres              -- ユーザー追加可
-  id            uuid PK
-  name          text UNIQUE NOT NULL  -- 挿入時に trim + NFKC 正規化
-  created_by    uuid FK profiles      ON DELETE SET NULL
-  created_at    timestamptz DEFAULT now()
-
-restaurants         -- 店舗マスタ（共有）
-  id            uuid PK
-  name          text NOT NULL
-  link          text
-  genre_id      uuid FK genres        ON DELETE RESTRICT
-  price_range   price_range_enum NOT NULL
-  created_by    uuid FK profiles      ON DELETE SET NULL
-  created_at    timestamptz DEFAULT now()
-  -- price_range_enum: '〜2000','2000〜5000','5000〜10000','10000〜20000','20000〜'
-
-visits              -- 訪問記録（任意）
-  id            uuid PK
-  restaurant_id uuid FK restaurants   ON DELETE CASCADE
-  user_id       uuid FK profiles      ON DELETE CASCADE
-  visit_date    date                  -- nullable
-  order_content text
-  payment_amount integer              -- 円・小数なし、CHECK >= 0
-  comment       text                  -- 任意の感想コメント
-  created_at    timestamptz DEFAULT now()
-
-ratings             -- 評価（visit に 0..1 で紐付く）
-  id            uuid PK
-  visit_id      uuid FK visits UNIQUE ON DELETE CASCADE
-  overall, food, service, atmosphere, cost_performance
-                smallint NOT NULL CHECK (BETWEEN 1 AND 10)
-
-health              -- Pause 防止 cron 用の単一行テーブル
-  id            smallint PK CHECK (id = 1)
-  pinged_at     timestamptz DEFAULT now()
-  -- マイグレーションでは INSERT (id) VALUES (1) ON CONFLICT (id) DO NOTHING で投入する
-```
-
-集計用に `restaurant_rating_summary` VIEW を定義し、平均値はクライアントで計算しない。
-VIEW には `avg_overall, avg_food, avg_service, avg_atmosphere, avg_cost_performance, rating_count` を含める（未評価店舗も `rating_count = 0` で必ず行が出るよう LEFT JOIN）。
-
-### Row Level Security（RLS）
-
-- `profiles`: 全ログインユーザー読み取り可、本人のみ更新可
-- `restaurants` / `genres`: 全ログインユーザー読み取り・作成可、作成者のみ更新可
-- `visits` / `ratings`: 全ログインユーザー読み取り可、本人のみ作成・更新・削除可
-- `allowed_emails`: クライアントから一切アクセス不可（Service Role のみ）
-- `health`: anon ロールでも SELECT 可（Pause 防止 cron が認証なしで叩くため）。INSERT/UPDATE/DELETE は不可
-- 全ポリシー共通（`health` 除く）：`EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid())` を満たすこと（招待制ガード）
-
-### Pause 防止（Free Tier 休眠回避）
-
-Supabase Free Tier は **1 週間 API 無アクセスでプロジェクトが自動 Pause** する。家族・友人のたまの利用では確実に踏むので、外部からの定期アクセスで生存させる。
-
-- GitHub Actions の cron（`.github/workflows/keepalive.yml`）が **毎日 03:00 JST に Supabase REST API を叩く**
-- 叩く先：`GET /rest/v1/health?select=id&limit=1`（anon SELECT 可の単一行テーブル）
-- Action は publishable key のみ使用（Service Role 不要 → secrets 漏洩リスク最小）
-- 失敗しても通知はしない（hobby app）。週次でログを確認できるよう Actions の履歴を見る運用
-- pg_cron は使わない（プロジェクト Pause 中は pg_cron も止まるため意味がない）
-- **万一 Pause された場合の復旧**：Supabase ダッシュボード → プロジェクト → "Restore project" を**手動で押す**（API からは起こせない）。その後 keepalive を `workflow_dispatch` で 1 度走らせて疎通確認。
-
-### 位置情報と外部連携
-
-「Google Maps と食べログのボタンが**正確にその店舗に飛ぶこと**」を最優先とし、
-ユーザーが直接 URL を貼る方式を採用する。**API キー不要・スクレイピング無し・依存追加無し**。
-
-過去に Nominatim ベースの近似住所登録 + 検索キーワード自動構成を試したが、
-小さな店は OSM 未登録のことが多く、近隣駅で代替登録 → 外部ボタンが正確な店舗に当たらない問題があった。
-直リンク方式が最も確実なのでそちらに統一した（migration 0003）。
-
-**スキーマ**：`restaurants.google_maps_url` / `tabelog_url` の 2 列。両方とも任意。
-
-**フォーム入力（`RestaurantForm`）**：
-- それぞれの欄に Google Maps / 食べログの店舗ページ URL を貼るだけ
-- バリデーションは `http(s)://` で始まる任意文字列・最大 1000 文字
-- その他のリンク（公式サイト・予約ページ等）は従来通り `link` 欄に 1 本
-
-**詳細画面のボタン（`ExternalLinks`）**：
-- **Google Maps**：`google_maps_url` を `href` に直接渡す。未設定時のみ `https://www.google.com/maps/search/?api=1&query=<店名>` のテキスト検索にフォールバック（ラベルが「Google Maps」→「Google Maps で検索」に変わる）
-- **食べログ**：`tabelog_url` を `href` に直接渡す。未設定時のみ `https://tabelog.com/rstLst/?sw=<店名>` の検索ページへフォールバック（ラベルが「食べログ」→「食べログで検索」に変わる）
-- **店舗ページ**：`link`（公式サイト・予約ページ等）。未設定なら出さない
-
-**地図表示（`RestaurantMap`）**：
-- `extractCoordsFromMapsUrl()`（`src/features/restaurants/mapsUrl.ts`）で `google_maps_url` から座標を抽出。`@lat,lng` / `?q=lat,lng` / `!3d!4d` の 3 パターンに対応
-- 抽出できれば OpenStreetMap の `embed.html` を `<iframe>` で貼り、ピンを立てる（依存ゼロ・APIキー不要）
-- **短縮 URL（`maps.app.goo.gl/*`、`goo.gl/maps/*`）はリダイレクト解決が CORS で塞がれるため未対応**
-  → ボタンは動く（クリックで Google が解決してくれる）が、地図プレビューだけは出ない。フォーム側で「フルパス URL を貼ると地図が出る」と注釈
-- 抽出できない / URL 未設定なら地図セクションごと非表示
-
-**客観評価（点数）**はアプリ内には取り込まない。Google Maps / 食べログをワンタップで開けば本家のレビューが見られる方が情報が新鮮（キャッシュしても陳腐化する）。スクレイピング・LLM 抽出は ToS／運用脆弱性／コストの観点で採用しない。
-
-### PWA
-
-- `vite-plugin-pwa` の `registerType: 'autoUpdate'`
-- Service Worker で静的アセットのみキャッシュ
-- **Supabase オリジン（`*.supabase.co` / `127.0.0.1:54321`）はキャッシュ対象外**にする（古い API レスポンス・期限切れ JWT を返さないため）
-- アプリシェルだけオフライン対応（API レスポンスのオフライン化はやらない）
-- アイコン・スプラッシュ：`public/icons/` に格納、`manifest.webmanifest` で指定
-
-### ルーティング（HashRouter 前提）
-
-```
-/                       一覧（フィルタ：店名・ジャンル・価格帯・各評価）
-/restaurants/new        店舗登録（評価/訪問なしでも可）
-/restaurants/:id        店舗詳細（個別の訪問・評価が並ぶ）
-/restaurants/:id/visits/new   訪問・評価を追加
-/users/:id              ユーザーが訪問した店舗一覧
-/me                     自分のプロフィール
-/login                  Google OAuth
-/signup                 合言葉入力 → Google OAuth
-```
-
-## ディレクトリ構成
-
-```
-bisyoku-app/
-├── .github/workflows/        CI / Deploy / Keepalive
-├── public/                   静的アセット、PWA アイコン
-├── src/
-│   ├── components/           汎用コンポーネント（BackButton / ConfirmDialog / GenreField / AppLayout）
-│   │   └── ui/               shadcn/ui ベースのプリミティブ（button / card / dialog / select 等）
-│   ├── features/             機能単位のモジュール（API + UI 両方を含める）
-│   │   ├── auth/             AuthProvider / RequireAuth / signupIntent
-│   │   ├── restaurants/      api.ts / RestaurantForm
-│   │   ├── visits/           api.ts / VisitForm / VisitItem
-│   │   ├── genres/           api.ts
-│   │   └── users/            api.ts
-│   ├── hooks/                useDebounced 等の汎用フック
-│   ├── lib/
-│   │   ├── supabase.ts       クライアント生成
-│   │   ├── queryClient.ts    TanStack Query デフォルト
-│   │   ├── queryKeys.ts      `qk` ファクトリ（全 queryKey はここを経由）
-│   │   ├── constants.ts      PRICE_RANGES / RATING_AXES / LIST_PAGE_SIZE
-│   │   ├── rating.ts         rating スコアのカラー判定
-│   │   └── utils.ts          cn (clsx + tailwind-merge)
-│   ├── pages/                ルートに対応するページ
-│   ├── test/                 Vitest setup
-│   ├── types/                共有型・DB 型（`supabase gen types` 出力）
-│   ├── App.tsx               ルーティング定義
-│   ├── main.tsx              ルート（Provider 構成 + dev 用 SW クリア）
-│   └── vite-env.d.ts
-├── supabase/
-│   ├── migrations/           SQL マイグレーション
-│   ├── functions/
-│   │   ├── _shared/cors.ts
-│   │   └── verify-passphrase/
-│   ├── seed.sql              ローカル専用：dev1/dev2 ユーザーを seed
-│   └── config.toml
-├── index.html
-├── vite.config.ts            Vite + PWA + base=/bisyoku-app/（本番のみ）
-├── tailwind.config.ts
-├── tsconfig.json
-└── package.json
-```
-
-## Supabase 接続戦略
-
-| 接続層 | 用途 | 採否 |
-|---|---|---|
-| **Framework**（`@supabase/supabase-js`） | クライアント・Edge Function 双方の DB / Auth アクセス（PostgREST 経由） | ✅ 全面採用 |
-| **ORM**（Drizzle 等で Postgres 直接） | 型安全な server-side クエリ | ❌ 不要（型は `supabase gen types` 生成、RLS を活用） |
-| **Direct**（`postgresql://...` 接続文字列） | マイグレーション適用、運用ツール | ⚠️ Supabase CLI 内部のみ（アプリコードからは使わない） |
-
-サーバが無いアーキテクチャなので、ORM/Direct をアプリから呼ばない。Edge Function も `createClient(SUPABASE_URL, SERVICE_ROLE_KEY)` で PostgREST 経由（=Framework）を使い、Direct 接続はしない。
-
-## 環境変数
-
-クライアント側（`VITE_` プレフィクスはビルド時にクライアントへ露出する前提で扱うこと）：
-
-| 変数 | 用途 |
-|---|---|
-| `VITE_PUBLIC_SUPABASE_URL` | Supabase プロジェクト URL |
-| `VITE_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase Publishable Key（旧 anon key の新名称、公開可、RLS 必須） |
-
-Edge Function Secret（クライアントに絶対露出させない）：
-
-| 変数 | 用途 |
-|---|---|
-| `SIGNUP_PASSPHRASE_HASH` | 合言葉の SHA-256(salt + passphrase) hex 文字列 |
-| `SIGNUP_PASSPHRASE_SALT` | 上記ハッシュに使うソルト（ランダム 32 文字） |
-| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` | Supabase が Edge Function に自動注入。`allowed_emails` への書き込み等に使う |
-
-GitHub Actions secrets：上記の `VITE_*` をビルド時に注入。
-
-## ローカル開発（Docker ベース）
-
-[Supabase CLI](https://supabase.com/docs/guides/local-development) を使い、Postgres / Auth / Storage / Studio を Docker で立ち上げる。
-
-```bash
-# 初回のみ
-brew install supabase/tap/supabase    # CLI インストール
-supabase init                          # supabase/ ディレクトリ生成
-supabase login                         # リモートとリンクする場合
-supabase link --project-ref <ref>      # 同上
-
-# 日常開発
-supabase start                         # Docker stack 起動（postgres, auth, storage, studio 等）
-supabase status                        # ローカル URL・publishable key を表示
-supabase db reset                      # migrations/seed を再適用
-supabase functions serve               # Edge Functions ローカル実行
-supabase stop                          # 停止
-```
-
-### env ファイルの方針
-
-シンプルに **`.env` 1 本（git 管理外）** で運用する。本番値はリポジトリ Secrets が唯一の正。
-
-| 利用シーン | 値の置き場所 |
-|---|---|
-| ローカル開発（`npm run dev`） | リポジトリ直下の `.env` |
-| CI / GitHub Pages ビルド | リポジトリ Secrets（`.github/workflows/*.yml` から `${{ secrets.* }}` で参照） |
-| keepalive ワークフロー | 同上 |
-
-`.env`、`.env.*` は `.gitignore` で全て除外済み。
-ローカルで本番ビルド（`npm run build`）を試したい時は、`.env` を一時的に本番値に書き換える運用。
-
-`.env` の値は `supabase start` 後の `supabase status` 出力（API URL / Publishable Key）から埋める。
-
-`supabase/migrations/` と `supabase/functions/` は git 管理。ローカルで作業 → `supabase db push` で本番へ反映。
-
-## 開発コマンド（プロジェクト初期化後）
+## 開発コマンド
 
 ```bash
 npm install              # 依存インストール
-npm run dev              # 開発サーバ起動
+npm run dev              # 開発サーバ（要 supabase start）
 npm run build            # 本番ビルド
 npm run preview          # ビルド成果物のローカル確認
 npm run lint             # ESLint
-npm run typecheck        # tsc --noEmit
+npm run typecheck        # tsc -b --noEmit
 npm run test             # Vitest
 npm run db:types         # Supabase 型生成（src/types/database.ts）
+npm run pwa:icons        # public/favicon.svg から PWA アイコン PNG 再生成
+
+supabase start           # ローカル Postgres / Auth / Studio 起動
+supabase status          # API URL と publishable key 確認
+supabase db reset        # migrations + seed.sql を全適用
+supabase functions serve verify-passphrase --env-file supabase/.env
 ```
-
-## CI/CD
-
-- `.github/workflows/ci.yml`：PR と main push で lint / typecheck / test / build
-- `.github/workflows/deploy.yml`：main push で GitHub Pages へ自動デプロイ
-- `.github/workflows/keepalive.yml`：毎日 03:00 JST に Supabase REST を叩いて Free Tier の自動 Pause を防止
-- GitHub Pages の設定は **Source = GitHub Actions**
-- ビルド時に `VITE_PUBLIC_SUPABASE_URL` / `VITE_PUBLIC_SUPABASE_PUBLISHABLE_KEY` を Secrets から注入
-- Vite の `base` はリポジトリ名（例: `/bisyoku-app/`）。カスタムドメインを使う場合は `'/'` に変更
-- ルータは **HashRouter** 採用のため `404.html` リダイレクトトリックは不要（deploy.yml の `cp dist/index.html dist/404.html` は念のための保険）
-
-## コーディング方針
-
-- 機能は `src/features/<feature>/` に閉じる。横断的な型・関数のみ `src/lib`・`src/types` へ
-- Supabase アクセスは feature 内に薄い関数として切り出し、UI から直接 SDK を叩かない
-- フォームは React Hook Form + Zod で型と検証を一元化
-- 日付は `date-fns`（軽量・tree-shake 可）
-- アクセシビリティ：shadcn/ui の Radix ベースを尊重、`aria-*` を欠かさない
-- コミットメッセージは Conventional Commits 推奨
-
-### TanStack Query のキー管理
-
-クエリキーは `src/lib/queryKeys.ts` の `qk` ファクトリに集約する。invalidation は前方一致なので、たとえば `qk.visits.forRestaurant(id)` を渡すと派生キー（`forRestaurantPaged(id, limit)` 等）もまとめて無効化される。**新しいクエリを追加する時は必ず `qk` を経由**する（文字列リテラルを書かない）。
-
-訪問・評価が変わった後の invalidation は **`invalidateAfterVisitChange(qc, restaurantId)`** に集約してある（同じ店舗の visits / count / detail / 一覧 / 全ユーザー履歴を一括無効化）。**ページ毎に `invalidateQueries` を 5 連発書かない**こと（無効化漏れの温床）。
-
-### バンドル戦略（route-level code splitting）
-
-- `src/App.tsx` は全ページを `React.lazy` で読み込み、ルートごとに別チャンク化する
-- `vite.config.ts` の `rollupOptions.output.manualChunks` で `vendor-react` / `vendor-supabase` / `vendor-radix` / `vendor-query` / `vendor` を分離。アプリコード変更時のキャッシュ無効化を最小化する
-- 新しいページを追加する場合は `App.tsx` 内で同じパターンの `lazy(() => import(...))` を踏襲する
 
 ## 現在のステータス
 
@@ -367,35 +81,4 @@ npm run db:types         # Supabase 型生成（src/types/database.ts）
 - DB スキーマ変更 → `supabase migration new` → ローカル `supabase db reset` で確認 → `npm run db:types` 再生成 → main マージで CI が `supabase db push`
 - Edge Function 変更 → ローカル `supabase functions serve` で確認 → main マージで CI が `supabase functions deploy verify-passphrase`
 
-具体的なローカル開発手順 / 初回デプロイ手順 / 2 回目以降の運用は `README.md` を参照。
-
-実装済みの主な機能：
-
-- 招待制サインアップ（合言葉 + Google OAuth + Edge Function 検証）
-- Google avatar の自動同期（display_name はユーザー編集を尊重）
-- 店舗の作成 / 編集 / 削除（cascade 警告付き確認ダイアログ）
-- 訪問 + 5 軸 10 段階評価の作成 / 編集 / 削除
-- 訪問にコメント欄（任意）
-- 店舗ごとに Google Maps / 食べログ / その他の URL を直接保存し、詳細画面でワンタップで開ける
-- `google_maps_url` から座標を抽出して詳細画面に OSM iframe で地図ピン表示（短縮 URL は地図のみ非表示）
-- 一覧フィルタ：店名 / ジャンル / 価格帯 / 総合 ≥ N / 並び（新着・評価高い・名前）
-- ページング：「もっと見る」で +`LIST_PAGE_SIZE` 件
-- ユーザー別訪問履歴
-- メンバー一覧
-- PWA（vite-plugin-pwa, autoUpdate, Supabase は NetworkOnly）
-- dev 用ワンクリックログイン（`supabase/seed.sql` の dev1 / dev2 ユーザー）
-
-## やらないこと（明示的スコープ外）
-
-- 一般公開・SEO 最適化（招待制クローズド前提）
-- ネイティブアプリ化（PWA で十分）
-- リアルタイム同期（コラボ性は薄いので Polling/再フェッチで十分）
-- 課金や有料機能
-- 投稿のモデレーション・編集履歴（信頼ベースの小グループ前提）
-- 写真・動画のアップロードと配信（Storage / 帯域の無料枠制約と、登録ハードル軽減のため）
-
-## 運用上の留意点
-
-- **Supabase Free Tier の自動 Pause** は keepalive ワークフローで回避。Supabase 側のポリシーが変わった場合は cron 間隔か叩く対象を見直す。
-- **無料枠の上限**：DB 500MB / 帯域 5GB/月 / Edge Function 500K invocations/月。写真機能を持たないので帯域・容量はかなり余裕がある想定。
-- 検索は当面 Postgres `ILIKE` で十分。データが増えたら `pg_trgm` GIN インデックスを後付けで検討。
+詳細手順は [`README.md`](./README.md) を参照。

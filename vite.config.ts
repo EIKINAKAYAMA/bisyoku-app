@@ -63,20 +63,19 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       output: {
         // vendor を分離してアプリコード変更時のキャッシュ無効化を最小化する。
-        // node_modules 内のパッケージ単位でグループ化（react / supabase / radix / その他）。
+        //
+        // ⚠ 以前は react / radix / tanstack / その他で chunk を細かく分けていたが、
+        // Vite の CJS→ESM interop と ESM 静的 import 解決の組み合わせで、
+        // 別 chunk の React の named export（`forwardRef` 等）が undefined のまま
+        // lucide-react / radix 等のモジュール本体が評価される事故が起きた
+        // （`Cannot read properties of undefined (reading 'forwardRef')` at lucide-react/Icon.js）。
+        //
+        // React に依存する node_modules を別 chunk に出さない構成にすることで、
+        // 同一 chunk 内のモジュール初期化順を Rollup が必ず正しく解決できるようにする。
+        // Supabase は React 非依存・サイズが大きい・更新頻度も独立なので分離を維持。
         manualChunks(id) {
           if (!id.includes('node_modules')) return
           if (id.includes('@supabase')) return 'vendor-supabase'
-          if (id.includes('@radix-ui')) return 'vendor-radix'
-          if (
-            id.includes('/react/') ||
-            id.includes('/react-dom/') ||
-            id.includes('/react-router') ||
-            id.includes('/scheduler/')
-          ) {
-            return 'vendor-react'
-          }
-          if (id.includes('@tanstack')) return 'vendor-query'
           return 'vendor'
         },
       },

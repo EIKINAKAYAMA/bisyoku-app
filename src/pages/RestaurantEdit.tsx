@@ -53,6 +53,8 @@ export function RestaurantEdit() {
     link: restaurantQuery.data.link,
     genre_id: restaurantQuery.data.genre_id,
     price_range: restaurantQuery.data.price_range,
+    google_maps_url: restaurantQuery.data.google_maps_url,
+    tabelog_url: restaurantQuery.data.tabelog_url,
   }
 
   return (

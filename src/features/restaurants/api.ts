@@ -119,6 +119,8 @@ export type CreateRestaurantInput = {
   link: string | null
   genre_id: string
   price_range: PriceRange
+  google_maps_url: string | null
+  tabelog_url: string | null
 }
 
 export async function createRestaurant(

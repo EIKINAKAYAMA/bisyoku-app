@@ -155,6 +155,36 @@ Supabase Free Tier は **1 週間 API 無アクセスでプロジェクトが自
 - pg_cron は使わない（プロジェクト Pause 中は pg_cron も止まるため意味がない）
 - **万一 Pause された場合の復旧**：Supabase ダッシュボード → プロジェクト → "Restore project" を**手動で押す**（API からは起こせない）。その後 keepalive を `workflow_dispatch` で 1 度走らせて疎通確認。
 
+### 位置情報と外部連携
+
+「Google Maps と食べログのボタンが**正確にその店舗に飛ぶこと**」を最優先とし、
+ユーザーが直接 URL を貼る方式を採用する。**API キー不要・スクレイピング無し・依存追加無し**。
+
+過去に Nominatim ベースの近似住所登録 + 検索キーワード自動構成を試したが、
+小さな店は OSM 未登録のことが多く、近隣駅で代替登録 → 外部ボタンが正確な店舗に当たらない問題があった。
+直リンク方式が最も確実なのでそちらに統一した（migration 0003）。
+
+**スキーマ**：`restaurants.google_maps_url` / `tabelog_url` の 2 列。両方とも任意。
+
+**フォーム入力（`RestaurantForm`）**：
+- それぞれの欄に Google Maps / 食べログの店舗ページ URL を貼るだけ
+- バリデーションは `http(s)://` で始まる任意文字列・最大 1000 文字
+- その他のリンク（公式サイト・予約ページ等）は従来通り `link` 欄に 1 本
+
+**詳細画面のボタン（`ExternalLinks`）**：
+- **Google Maps**：`google_maps_url` を `href` に直接渡す。未設定時のみ `https://www.google.com/maps/search/?api=1&query=<店名>` のテキスト検索にフォールバック（ラベルが「Google Maps」→「Google Maps で検索」に変わる）
+- **食べログ**：`tabelog_url` を `href` に直接渡す。未設定時のみ `https://tabelog.com/rstLst/?sw=<店名>` の検索ページへフォールバック（ラベルが「食べログ」→「食べログで検索」に変わる）
+- **店舗ページ**：`link`（公式サイト・予約ページ等）。未設定なら出さない
+
+**地図表示（`RestaurantMap`）**：
+- `extractCoordsFromMapsUrl()`（`src/features/restaurants/mapsUrl.ts`）で `google_maps_url` から座標を抽出。`@lat,lng` / `?q=lat,lng` / `!3d!4d` の 3 パターンに対応
+- 抽出できれば OpenStreetMap の `embed.html` を `<iframe>` で貼り、ピンを立てる（依存ゼロ・APIキー不要）
+- **短縮 URL（`maps.app.goo.gl/*`、`goo.gl/maps/*`）はリダイレクト解決が CORS で塞がれるため未対応**
+  → ボタンは動く（クリックで Google が解決してくれる）が、地図プレビューだけは出ない。フォーム側で「フルパス URL を貼ると地図が出る」と注釈
+- 抽出できない / URL 未設定なら地図セクションごと非表示
+
+**客観評価（点数）**はアプリ内には取り込まない。Google Maps / 食べログをワンタップで開けば本家のレビューが見られる方が情報が新鮮（キャッシュしても陳腐化する）。スクレイピング・LLM 抽出は ToS／運用脆弱性／コストの観点で採用しない。
+
 ### PWA
 
 - `vite-plugin-pwa` の `registerType: 'autoUpdate'`
@@ -346,6 +376,8 @@ npm run db:types         # Supabase 型生成（src/types/database.ts）
 - 店舗の作成 / 編集 / 削除（cascade 警告付き確認ダイアログ）
 - 訪問 + 5 軸 10 段階評価の作成 / 編集 / 削除
 - 訪問にコメント欄（任意）
+- 店舗ごとに Google Maps / 食べログ / その他の URL を直接保存し、詳細画面でワンタップで開ける
+- `google_maps_url` から座標を抽出して詳細画面に OSM iframe で地図ピン表示（短縮 URL は地図のみ非表示）
 - 一覧フィルタ：店名 / ジャンル / 価格帯 / 総合 ≥ N / 並び（新着・評価高い・名前）
 - ページング：「もっと見る」で +`LIST_PAGE_SIZE` 件
 - ユーザー別訪問履歴

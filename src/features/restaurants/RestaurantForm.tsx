@@ -16,19 +16,24 @@ import { GenreField } from '@/components/GenreField'
 import { PRICE_RANGES } from '@/lib/constants'
 import type { CreateRestaurantInput } from '@/features/restaurants/api'
 
+// 任意の URL 欄に共通のバリデーション：未入力 OK・入力されていれば http(s)://
+const optionalUrl = z
+  .string()
+  .max(1000)
+  .refine(
+    (v) => !v || /^https?:\/\//.test(v),
+    'http(s):// から始まる URL を入力してください'
+  )
+  .optional()
+  .or(z.literal(''))
+
 const schema = z.object({
   name: z.string().min(1, '店名を入力してください').max(120),
-  link: z
-    .string()
-    .max(500)
-    .refine(
-      (v) => !v || /^https?:\/\//.test(v),
-      'http(s):// から始まる URL を入力してください'
-    )
-    .optional()
-    .or(z.literal('')),
+  link: optionalUrl,
   genre_id: z.string().min(1, 'ジャンルを選択してください'),
   price_range: z.enum(PRICE_RANGES),
+  google_maps_url: optionalUrl,
+  tabelog_url: optionalUrl,
 })
 type FormValues = z.infer<typeof schema>
 
@@ -37,6 +42,8 @@ export type RestaurantFormInitial = {
   link: string | null
   genre_id: string
   price_range: (typeof PRICE_RANGES)[number]
+  google_maps_url: string | null
+  tabelog_url: string | null
 }
 
 type Props = {
@@ -56,6 +63,8 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
       link: initial?.link ?? '',
       genre_id: initial?.genre_id ?? '',
       price_range: initial?.price_range ?? '〜2000',
+      google_maps_url: initial?.google_maps_url ?? '',
+      tabelog_url: initial?.tabelog_url ?? '',
     },
   })
 
@@ -65,9 +74,13 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
     try {
       await onSubmit({
         name: values.name,
-        link: values.link ? values.link : null,
+        link: values.link?.trim() ? values.link.trim() : null,
         genre_id: values.genre_id,
         price_range: values.price_range,
+        google_maps_url: values.google_maps_url?.trim()
+          ? values.google_maps_url.trim()
+          : null,
+        tabelog_url: values.tabelog_url?.trim() ? values.tabelog_url.trim() : null,
       })
     } catch (e) {
       setTopError((e as Error).message)
@@ -123,10 +136,64 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="link" className="text-base">
-          店のリンク（任意）
+        <Label htmlFor="google_maps_url" className="text-base">
+          Google Maps の URL（任意）
         </Label>
-        <Input id="link" inputMode="url" placeholder="https://..." {...form.register('link')} />
+        <Input
+          id="google_maps_url"
+          inputMode="url"
+          placeholder="https://www.google.com/maps/place/..."
+          {...form.register('google_maps_url')}
+        />
+        <p className="text-xs text-muted-foreground">
+          Google Maps で店舗ページを開き、「共有」→「リンクをコピー」で取得できます。
+          詳細画面の <strong>Google Maps ボタン</strong> がこの URL を直接開き、
+          地図のピンも URL から座標を抽出して表示します。
+          <br />
+          ⚠ 短縮 URL（<code>maps.app.goo.gl/...</code>）でもボタンは動きますが、
+          地図プレビューは表示できません。フルパス URL を貼ると地図が出ます。
+        </p>
+        {form.formState.errors.google_maps_url && (
+          <p className="text-sm text-destructive">
+            {form.formState.errors.google_maps_url.message}
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="tabelog_url" className="text-base">
+          食べログの URL（任意）
+        </Label>
+        <Input
+          id="tabelog_url"
+          inputMode="url"
+          placeholder="https://tabelog.com/tokyo/..."
+          {...form.register('tabelog_url')}
+        />
+        <p className="text-xs text-muted-foreground">
+          詳細画面の <strong>食べログボタン</strong> がこの URL を直接開きます。
+          未入力の場合は店名で検索ページへ飛ばします。
+        </p>
+        {form.formState.errors.tabelog_url && (
+          <p className="text-sm text-destructive">
+            {form.formState.errors.tabelog_url.message}
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="link" className="text-base">
+          その他のリンク（任意）
+        </Label>
+        <Input
+          id="link"
+          inputMode="url"
+          placeholder="公式サイト・予約ページなど"
+          {...form.register('link')}
+        />
+        <p className="text-xs text-muted-foreground">
+          公式サイト・Instagram・予約ページなど、Google Maps と食べログ以外のリンクを 1 つだけ。
+        </p>
         {form.formState.errors.link && (
           <p className="text-sm text-destructive">{form.formState.errors.link.message}</p>
         )}

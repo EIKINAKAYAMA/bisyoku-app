@@ -157,28 +157,34 @@ export type Database = {
           created_at: string
           created_by: string | null
           genre_id: string
+          google_maps_url: string | null
           id: string
           link: string | null
           name: string
           price_range: Database["public"]["Enums"]["price_range_enum"]
+          tabelog_url: string | null
         }
         Insert: {
           created_at?: string
           created_by?: string | null
           genre_id: string
+          google_maps_url?: string | null
           id?: string
           link?: string | null
           name: string
           price_range: Database["public"]["Enums"]["price_range_enum"]
+          tabelog_url?: string | null
         }
         Update: {
           created_at?: string
           created_by?: string | null
           genre_id?: string
+          google_maps_url?: string | null
           id?: string
           link?: string | null
           name?: string
           price_range?: Database["public"]["Enums"]["price_range_enum"]
+          tabelog_url?: string | null
         }
         Relationships: [
           {

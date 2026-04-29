@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ExternalLink, MapPin, Pencil, Plus, Trash2, Utensils } from 'lucide-react'
 import {
   countVisitsForRestaurant,
   deleteRestaurant,
@@ -12,6 +12,8 @@ import { useAuth } from '@/features/auth/AuthProvider'
 import { VisitItem } from '@/features/visits/VisitItem'
 import { BackButton } from '@/components/BackButton'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { RestaurantMap } from '@/components/RestaurantMap'
+import { extractCoordsFromMapsUrl } from '@/features/restaurants/mapsUrl'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { LIST_PAGE_SIZE, RATING_AXES } from '@/lib/constants'
@@ -75,6 +77,9 @@ export function RestaurantDetail() {
   const visits = visitsQuery.data ?? []
   const hasMore = visits.length === limit
   const visitCount = visitCountQuery.data ?? 0
+  // google_maps_url から座標が拾えれば地図を出す。短縮 URL（maps.app.goo.gl/*）等で
+  // 拾えない場合は地図セクション自体を非表示にする（ボタンは動く）。
+  const mapCoords = extractCoordsFromMapsUrl(r.google_maps_url)
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -112,17 +117,16 @@ export function RestaurantDetail() {
                 {r.price_range}
               </span>
             </div>
-            {r.link && (
-              <a
-                href={r.link}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline"
-              >
-                店舗ページ <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
           </header>
+
+          <ExternalLinks
+            link={r.link}
+            name={r.name}
+            googleMapsUrl={r.google_maps_url}
+            tabelogUrl={r.tabelog_url}
+          />
+
+          {mapCoords && <RestaurantMap lat={mapCoords.lat} lng={mapCoords.lng} />}
 
           <Card className="overflow-hidden border-2">
             <div className="bg-gradient-to-br from-primary/10 via-accent/10 to-transparent p-4">
@@ -227,6 +231,52 @@ export function RestaurantDetail() {
           if (visitToDelete) deleteVisitMut.mutate(visitToDelete)
         }}
       />
+    </div>
+  )
+}
+
+function ExternalLinks({
+  link,
+  name,
+  googleMapsUrl,
+  tabelogUrl,
+}: {
+  link: string | null
+  name: string
+  googleMapsUrl: string | null
+  tabelogUrl: string | null
+}) {
+  // 直リンクが設定されていればそれをそのまま開く（店舗にピンポイントで飛ぶ）。
+  // 未設定の場合のみ店名でのテキスト検索にフォールバック。
+  const mapsHref =
+    googleMapsUrl ??
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(name)}`
+  const tabelogHref =
+    tabelogUrl ?? `https://tabelog.com/rstLst/?sw=${encodeURIComponent(name)}`
+
+  // 直リンクではない（フォールバックの検索）場合はラベルでそれと分かるようにする。
+  const mapsLabel = googleMapsUrl ? 'Google Maps' : 'Google Maps で検索'
+  const tabelogLabel = tabelogUrl ? '食べログ' : '食べログで検索'
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {link && (
+        <Button asChild variant="outline" size="sm">
+          <a href={link} target="_blank" rel="noreferrer noopener">
+            <ExternalLink className="h-3.5 w-3.5" /> 店舗ページ
+          </a>
+        </Button>
+      )}
+      <Button asChild variant="outline" size="sm">
+        <a href={mapsHref} target="_blank" rel="noreferrer noopener">
+          <MapPin className="h-3.5 w-3.5" /> {mapsLabel}
+        </a>
+      </Button>
+      <Button asChild variant="outline" size="sm">
+        <a href={tabelogHref} target="_blank" rel="noreferrer noopener">
+          <Utensils className="h-3.5 w-3.5" /> {tabelogLabel}
+        </a>
+      </Button>
     </div>
   )
 }

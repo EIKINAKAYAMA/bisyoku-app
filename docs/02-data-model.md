@@ -200,6 +200,7 @@ $$;
 | `0006_relax_restaurants_update_policy.sql` | `restaurants` の UPDATE ポリシーを invited ユーザー全員に緩和（DELETE は据え置き） |
 | `0007_restaurants_delete_when_no_visits.sql` | `restaurants` の DELETE ポリシーも invited ユーザー全員に緩和、ただし訪問記録 0 件のときのみ |
 | `0008_genres_admin_managed.sql` | `genres` の INSERT / UPDATE ポリシー撤去 + デフォルト 25 件のジャンルを seed（既存と重複は ON CONFLICT DO NOTHING でスキップ） |
+| `0009_genres_canonical_25.sql` | `genres` を canonical な 25 件のみに固定（本番手動クリーンアップ済の状態をコード側でも正としてソース化） |
 
 ## seed（ローカル専用）
 

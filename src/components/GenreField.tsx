@@ -36,14 +36,16 @@ export function GenreField({ value, onChange }: Props) {
     return list.filter((g) => normalize(g.name).includes(needle))
   }, [genresQuery.data, search])
 
+  const close = () => {
+    setOpen(false)
+    setSearch('')
+  }
+
   useEffect(() => {
     if (!open) return
     const onMouseDown = (e: MouseEvent) => {
       if (!wrapperRef.current) return
-      if (!wrapperRef.current.contains(e.target as Node)) {
-        setOpen(false)
-        setSearch('')
-      }
+      if (!wrapperRef.current.contains(e.target as Node)) close()
     }
     document.addEventListener('mousedown', onMouseDown)
     return () => document.removeEventListener('mousedown', onMouseDown)
@@ -55,8 +57,7 @@ export function GenreField({ value, onChange }: Props) {
 
   const handleSelect = (id: string) => {
     onChange(id)
-    setOpen(false)
-    setSearch('')
+    close()
   }
 
   return (
@@ -64,6 +65,8 @@ export function GenreField({ value, onChange }: Props) {
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className={cn(
           'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
@@ -79,27 +82,32 @@ export function GenreField({ value, onChange }: Props) {
           <div className="border-b p-2">
             <Input
               ref={searchInputRef}
+              type="search"
               placeholder="ジャンルを検索..."
+              aria-label="ジャンルを検索"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') {
                   e.preventDefault()
-                  setOpen(false)
-                  setSearch('')
+                  close()
+                } else if (e.key === 'Enter') {
+                  // 候補 0 件でも親フォームに submit を伝播させない
+                  e.preventDefault()
+                  if (filtered[0]) handleSelect(filtered[0].id)
                 }
               }}
               className="h-9"
             />
           </div>
-          <ul className="max-h-60 overflow-auto py-1">
+          <ul role="listbox" className="max-h-60 overflow-auto py-1">
             {filtered.length === 0 ? (
               <li className="px-3 py-2 text-sm text-muted-foreground">該当なし</li>
             ) : (
               filtered.map((g) => {
                 const isSelected = g.id === value
                 return (
-                  <li key={g.id}>
+                  <li key={g.id} role="option" aria-selected={isSelected}>
                     <button
                       type="button"
                       onClick={() => handleSelect(g.id)}

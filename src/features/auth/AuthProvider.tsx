@@ -25,6 +25,21 @@ const log = (...args: unknown[]) => {
   if (import.meta.env.DEV) console.log('[Auth]', ...args)
 }
 
+/**
+ * Promise を ms 後に reject する race。Supabase 呼び出しが返ってこない時の
+ * 出口をフロント側で確実に作るために使う。
+ */
+const withTimeout = <T,>(p: Promise<T>, ms: number, label: string): Promise<T> =>
+  Promise.race([
+    p,
+    new Promise<never>((_, reject) =>
+      window.setTimeout(
+        () => reject(new Error(`${label} timeout (${ms}ms)`)),
+        ms
+      )
+    ),
+  ])
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -80,6 +95,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     let activeUserId: string | null = null
 
+    // Safety net: 初回 auth 解決が 8 秒以内に終わらない時の最終出口。正常に解決したら
+    // finalize() で clearTimeout され、このコールバックは発火しない（= 警告も出ない）。
+    //   - loading=true のまま：getSession() がぶら下がっているケース → 解放
+    //   - profileStatus='loading' のまま：fetchProfile のタイムアウトも効かなかった稀なケース
+    //     → 'error' に倒して RequireAuth のエラー画面（再読み込みボタン付き）に出口を作る
+    const safetyTimeout = window.setTimeout(() => {
+      if (cancelled) return
+      console.warn('[Auth] safety timeout fired (8s)')
+      setLoading(false)
+      setProfileStatus((prev) => (prev === 'loading' ? 'error' : prev))
+    }, 8000)
+
+    /** auth 初期解決を確定し、safety net をキャンセル */
+    const finalize = () => {
+      if (cancelled) return
+      setLoading(false)
+      window.clearTimeout(safetyTimeout)
+    }
+
     const apply = async (next: Session | null, source: string) => {
       if (cancelled) return
       log(source, '→ session user =', next?.user?.id ?? 'null')
@@ -89,8 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (userId === activeUserId) {
         // 同じユーザー（TOKEN_REFRESHED など）：profile fetch は不要
-        // ただし初回マウントで loading=true のままだったら解除する
-        if (!cancelled) setLoading(false)
+        finalize()
         return
       }
 
@@ -100,39 +133,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 新規ログイン or 別ユーザー：profile を取り直す
         setProfileStatus('loading')
         try {
-          const p = await fetchProfile(userId)
+          // 6 秒以内に返ってこなければエラー扱い。RequireAuth のエラー画面で再読み込み導線を出す
+          const p = await withTimeout(fetchProfile(userId), 6000, 'fetchProfile')
           if (cancelled || activeUserId !== userId) return
           log(source, '✓ profile loaded:', p?.display_name ?? '(no row)')
 
-          // Google の最新 avatar_url と差分があれば profile を同期（display_name はユーザー編集尊重）
-          const synced = await syncFromAuthMeta(p, next)
-          if (cancelled || activeUserId !== userId) return
-
-          setProfile(synced)
+          // ここでまず profile を反映してログインを完了させる。
+          // avatar 同期（Google 側差分の UPDATE）は副次処理なので非同期に流して
+          // ログインの待ち時間に乗せない。差分があれば setProfile で後から反映する。
+          setProfile(p)
           setProfileStatus('ok')
+
+          if (p) {
+            void withTimeout(syncFromAuthMeta(p, next), 4000, 'syncFromAuthMeta')
+              .then((synced) => {
+                if (cancelled || activeUserId !== userId) return
+                if (synced && synced !== p) setProfile(synced)
+              })
+              .catch((e) => log('syncFromAuthMeta skipped:', e))
+          }
         } catch (e) {
           if (cancelled || activeUserId !== userId) return
           log(source, '✗ profile fetch failed:', e)
           setProfileStatus('error')
           // profile は前の値のままにする（誤遷移防止）
         } finally {
-          if (!cancelled) setLoading(false)
+          finalize()
         }
       } else {
         // ログアウト
         setProfile(null)
         setProfileStatus('idle')
-        setLoading(false)
+        finalize()
       }
     }
-
-    // Safety net: 8 秒で必ず loader を解放
-    const safetyTimeout = window.setTimeout(() => {
-      if (!cancelled) {
-        console.warn('[Auth] safety timeout fired (8s)')
-        setLoading(false)
-      }
-    }, 8000)
 
     // 初期セッション取得（高速・確実）
     supabase.auth
@@ -143,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch((e) => {
         console.error('[Auth] getSession threw:', e)
-        if (!cancelled) setLoading(false)
+        finalize()
       })
 
     // 以降の変更を購読（INITIAL_SESSION は上の getSession で処理済なのでスキップ）

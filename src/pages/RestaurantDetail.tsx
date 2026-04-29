@@ -86,7 +86,7 @@ export function RestaurantDetail() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <BackButton />
+      <BackButton fallback="/" />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_2fr]">
         <div className="space-y-4 lg:sticky lg:top-20 lg:self-start">

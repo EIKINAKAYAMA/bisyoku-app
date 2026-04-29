@@ -51,7 +51,7 @@ export function RestaurantEdit() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <BackButton />
+      <BackButton fallback={`/restaurants/${id}`} />
       <header>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">店舗を編集</h1>
         <p className="mt-1 text-sm text-muted-foreground">

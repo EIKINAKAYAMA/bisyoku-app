@@ -68,7 +68,7 @@ export function VisitEdit() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <BackButton />
+      <BackButton fallback={`/restaurants/${id}`} />
       <header>
         <h1 className="text-2xl font-bold tracking-tight md:text-3xl">訪問を編集</h1>
         <p className="mt-1 text-base text-muted-foreground">

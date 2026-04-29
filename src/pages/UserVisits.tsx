@@ -56,7 +56,7 @@ export function UserVisits() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <BackButton />
+      <BackButton fallback="/" />
 
       <header className="flex items-center gap-4">
         <Avatar

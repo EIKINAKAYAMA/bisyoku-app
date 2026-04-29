@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, type SubmitErrorHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { focusFirstFormError } from '@/lib/formErrors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -93,8 +94,16 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
     }
   }
 
+  const onInvalid: SubmitErrorHandler<FormValues> = (errors) => {
+    setTopError('入力内容に不備があります。赤字の項目をご確認ください。')
+    focusFirstFormError(errors)
+  }
+
   return (
-    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
+    <form
+      onSubmit={form.handleSubmit(handleSubmit, onInvalid)}
+      className="space-y-5"
+    >
       <div className="space-y-2">
         <Label htmlFor="name" className="text-base">
           店名
@@ -105,7 +114,7 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2" id="field-genre_id">
         <Label className="text-base">ジャンル</Label>
         <GenreField
           value={form.watch('genre_id') || undefined}

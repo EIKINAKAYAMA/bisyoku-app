@@ -1,7 +1,8 @@
 import { useState } from 'react'
-import { useForm, type SubmitHandler } from 'react-hook-form'
+import { useForm, type SubmitErrorHandler, type SubmitHandler } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { focusFirstFormError } from '@/lib/formErrors'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -133,8 +134,16 @@ export function VisitForm({ initial, onSubmit, submitLabel }: Props) {
     }
   }
 
+  const onInvalid: SubmitErrorHandler<FormValues> = (errors) => {
+    setTopError('入力内容に不備があります。赤字の項目をご確認ください。')
+    focusFirstFormError(errors)
+  }
+
   return (
-    <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
+    <form
+      onSubmit={form.handleSubmit(handleSubmit, onInvalid)}
+      className="space-y-5"
+    >
       <div className="space-y-2">
         <Label htmlFor="visit_date" className="text-base">
           訪問日（任意）

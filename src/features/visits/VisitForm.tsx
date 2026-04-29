@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { RATING_AXES } from '@/lib/constants'
+import { RATING_SUB_AXES } from '@/lib/constants'
 import type { RatingInput, VisitInput } from '@/features/visits/api'
 
 const ratingNum = z
@@ -27,7 +27,6 @@ const schema = z
       .optional(),
     comment: z.string().max(4000).optional().or(z.literal('')),
     include_rating: z.boolean(),
-    overall: z.preprocess((v) => (v === '' ? undefined : Number(v)), ratingNum.optional()),
     food: z.preprocess((v) => (v === '' ? undefined : Number(v)), ratingNum.optional()),
     service: z.preprocess((v) => (v === '' ? undefined : Number(v)), ratingNum.optional()),
     atmosphere: z.preprocess((v) => (v === '' ? undefined : Number(v)), ratingNum.optional()),
@@ -38,7 +37,7 @@ const schema = z
   })
   .superRefine((data, ctx) => {
     if (data.include_rating) {
-      for (const axis of RATING_AXES) {
+      for (const axis of RATING_SUB_AXES) {
         if (data[axis.key] == null) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -78,7 +77,6 @@ export function VisitForm({ initial, onSubmit, submitLabel }: Props) {
       payment_amount: initial?.payment_amount ?? null,
       comment: initial?.comment ?? '',
       include_rating: initial?.rating != null,
-      overall: initial?.rating?.overall,
       food: initial?.rating?.food,
       service: initial?.rating?.service,
       atmosphere: initial?.rating?.atmosphere,
@@ -87,25 +85,46 @@ export function VisitForm({ initial, onSubmit, submitLabel }: Props) {
   })
 
   const includeRating = form.watch('include_rating')
+  const food = form.watch('food')
+  const service = form.watch('service')
+  const atmosphere = form.watch('atmosphere')
+  const costPerformance = form.watch('cost_performance')
+
+  // 入力欄は number でも string でも来うるので number 化して平均を出す
+  const subValues = [food, service, atmosphere, costPerformance].map((v) => {
+    if (v == null || v === ('' as unknown as number)) return null
+    const n = typeof v === 'number' ? v : Number(v)
+    return Number.isFinite(n) ? n : null
+  })
+  const allSubFilled = subValues.every((v): v is number => v != null)
+  const computedOverall = allSubFilled
+    ? Math.round(subValues.reduce((s, v) => s + (v as number), 0) / subValues.length)
+    : null
 
   const handleSubmit: SubmitHandler<FormValues> = async (values) => {
     setTopError(null)
     setSubmitting(true)
     try {
+      let rating: RatingInput | null = null
+      if (values.include_rating) {
+        const f = values.food!
+        const s = values.service!
+        const a = values.atmosphere!
+        const c = values.cost_performance!
+        rating = {
+          overall: Math.round((f + s + a + c) / 4),
+          food: f,
+          service: s,
+          atmosphere: a,
+          cost_performance: c,
+        }
+      }
       await onSubmit({
         visit_date: values.visit_date ? values.visit_date : null,
         order_content: values.order_content ? values.order_content : null,
         payment_amount: values.payment_amount ?? null,
         comment: values.comment ? values.comment : null,
-        rating: values.include_rating
-          ? {
-              overall: values.overall!,
-              food: values.food!,
-              service: values.service!,
-              atmosphere: values.atmosphere!,
-              cost_performance: values.cost_performance!,
-            }
-          : null,
+        rating,
       })
     } catch (e) {
       setTopError((e as Error).message)
@@ -169,29 +188,43 @@ export function VisitForm({ initial, onSubmit, submitLabel }: Props) {
       </div>
 
       {includeRating && (
-        <div className="grid grid-cols-2 gap-3 rounded-lg border-2 border-primary/20 bg-primary/5 p-4 sm:grid-cols-5">
-          {RATING_AXES.map((axis) => (
-            <div key={axis.key} className="space-y-1">
-              <Label htmlFor={axis.key} className="text-sm font-medium">
-                {axis.label}
-              </Label>
-              <Input
-                id={axis.key}
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={10}
-                step={1}
-                className="text-center text-lg font-bold"
-                {...form.register(axis.key)}
-              />
-              {form.formState.errors[axis.key] && (
-                <p className="text-xs text-destructive">
-                  {form.formState.errors[axis.key]?.message as string}
-                </p>
-              )}
+        <div className="space-y-3 rounded-lg border-2 border-primary/20 bg-primary/5 p-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {RATING_SUB_AXES.map((axis) => (
+              <div key={axis.key} className="space-y-1">
+                <Label htmlFor={axis.key} className="text-sm font-medium">
+                  {axis.label}
+                </Label>
+                <Input
+                  id={axis.key}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={10}
+                  step={1}
+                  className="text-center text-lg font-bold"
+                  {...form.register(axis.key)}
+                />
+                {form.formState.errors[axis.key] && (
+                  <p className="text-xs text-destructive">
+                    {form.formState.errors[axis.key]?.message as string}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center justify-between rounded-md border border-primary/30 bg-background/60 px-3 py-2">
+            <div>
+              <p className="text-sm font-medium">総合（自動算出）</p>
+              <p className="text-xs text-muted-foreground">
+                4 項目の平均を四捨五入して保存します
+              </p>
             </div>
-          ))}
+            <p className="text-2xl font-bold tabular-nums">
+              {computedOverall ?? '—'}
+            </p>
+          </div>
         </div>
       )}
 

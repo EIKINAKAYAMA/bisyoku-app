@@ -20,3 +20,13 @@ export const RATING_AXES = [
 ] as const
 
 export type RatingAxisKey = (typeof RATING_AXES)[number]['key']
+
+// 入力対象の軸（総合は 4 軸の平均から自動算出するため除外）
+export const RATING_SUB_AXES = [
+  { key: 'food', label: '料理' },
+  { key: 'service', label: 'サービス' },
+  { key: 'atmosphere', label: '雰囲気' },
+  { key: 'cost_performance', label: 'コスパ' },
+] as const
+
+export type RatingSubAxisKey = (typeof RATING_SUB_AXES)[number]['key']

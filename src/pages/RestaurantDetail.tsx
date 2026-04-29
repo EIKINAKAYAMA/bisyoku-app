@@ -73,10 +73,13 @@ export function RestaurantDetail() {
   }
 
   const r = restaurantQuery.data
-  const isOwner = r.created_by === user?.id
   const visits = visitsQuery.data ?? []
   const hasMore = visits.length === limit
   const visitCount = visitCountQuery.data ?? 0
+  // 店舗削除は「訪問記録 0 件のとき招待ユーザー全員可」（DB 側 RLS と一致）。
+  // 1 件でも残っていれば他人のデータ巻き込み防止のため不可。
+  // visitCount のロード完了を待ってから判定する（ロード中は false 扱いで誤クリックを防ぐ）。
+  const canDeleteRestaurant = visitCountQuery.isSuccess && visitCount === 0
   // google_maps_url から座標が拾えれば地図を出す。短縮 URL（maps.app.goo.gl/*）等で
   // 拾えない場合は地図セクション自体を非表示にする（ボタンは動く）。
   const mapCoords = extractCoordsFromMapsUrl(r.google_maps_url)
@@ -90,24 +93,34 @@ export function RestaurantDetail() {
           <header className="space-y-3">
             <div className="flex items-start justify-between gap-3">
               <h1 className="text-2xl font-bold tracking-tight md:text-4xl">{r.name}</h1>
-              {isOwner && (
-                <div className="flex shrink-0 items-center gap-1">
-                  <Button asChild variant="ghost" size="icon" className="h-9 w-9">
-                    <Link to={`/restaurants/${r.id}/edit`} aria-label="店舗を編集">
-                      <Pencil className="h-4 w-4" />
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => setRestaurantConfirmOpen(true)}
-                    aria-label="店舗を削除"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
+              <div className="flex shrink-0 items-center gap-1">
+                {/* 店舗マスタは共有データなので、編集も削除も招待ユーザー全員に開放。
+                    削除は他人の記録巻き込み防止のため「訪問記録 0 件」のときのみ可。 */}
+                <Button asChild variant="ghost" size="icon" className="h-9 w-9">
+                  <Link to={`/restaurants/${r.id}/edit`} aria-label="店舗を編集">
+                    <Pencil className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => setRestaurantConfirmOpen(true)}
+                  disabled={!canDeleteRestaurant}
+                  aria-label={
+                    canDeleteRestaurant
+                      ? '店舗を削除'
+                      : '訪問記録があるため削除できません'
+                  }
+                  title={
+                    canDeleteRestaurant
+                      ? undefined
+                      : '訪問記録があるため削除できません'
+                  }
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2 text-sm">
               <span className="rounded-full bg-primary/10 px-3 py-1 font-medium text-primary">
@@ -195,21 +208,24 @@ export function RestaurantDetail() {
         </div>
       </div>
 
-      {/* 店舗削除：cascade 警告付き */}
+      {/* 店舗削除：訪問記録 0 件のときのみボタンが押せる前提なので cascade 警告は不要 */}
       <ConfirmDialog
         open={restaurantConfirmOpen}
-        onOpenChange={setRestaurantConfirmOpen}
+        onOpenChange={(open) => {
+          setRestaurantConfirmOpen(open)
+          // 閉じたタイミングでエラー表示もリセットする（次回開いたときに残らないように）
+          if (!open) deleteRestaurantMut.reset()
+        }}
         title="店舗を削除しますか？"
         description={
           <>
             <p className="font-medium text-foreground">「{r.name}」を削除します。</p>
-            {visitCount > 0 && (
-              <p className="mt-2 rounded-md bg-destructive/10 p-3 text-destructive">
-                ⚠️ この店舗に紐づく <strong>訪問記録 {visitCount} 件</strong> と、
-                それに紐づくすべての評価・コメントも一緒に削除されます。
+            <p className="mt-2">この操作は取り消せません。</p>
+            {deleteRestaurantMut.isError && (
+              <p className="mt-3 rounded-md bg-destructive/10 p-3 text-destructive">
+                {(deleteRestaurantMut.error as Error).message}
               </p>
             )}
-            <p className="mt-2">この操作は取り消せません。</p>
           </>
         }
         confirmLabel="削除する"

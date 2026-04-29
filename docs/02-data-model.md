@@ -171,12 +171,14 @@ $$;
 | `profiles` | invited | （Edge Function のみ） | 本人のみ | （ON DELETE CASCADE で auth.users 削除に追従） |
 | `allowed_emails` | × | × | × | × |
 | `genres` | invited | invited 且つ `created_by = auth.uid()` | 作成者のみ | × |
-| `restaurants` | invited | invited 且つ `created_by = auth.uid()` | 作成者のみ | 作成者のみ |
+| `restaurants` | invited | invited 且つ `created_by = auth.uid()` | invited（全員） | invited 且つ 訪問記録 0 件 |
 | `visits` | invited | invited 且つ `user_id = auth.uid()` | 本人のみ | 本人のみ |
 | `ratings` | invited | 親 visit が本人のもの | 同左 | 同左 |
 | `health` | anon + authenticated | × | × | × |
 
 > `restaurants` の DELETE ポリシーは migration `0004` で追加された。`0001` では SELECT / INSERT / UPDATE のみだったため、UI に削除ボタンはあっても RLS で 0 行影響に silent fail していた可能性がある。
+
+> `restaurants` の UPDATE / DELETE は migration `0006` / `0007` で「作成者のみ」から「招待ユーザー全員」に緩和された。店舗マスタは家族・友人グループで共有して育てるデータなので、編集は誰でも可能。削除は他人の訪問記録・評価が CASCADE で巻き込まれる事故を防ぐため、**訪問記録が 1 件もぶら下がっていない店舗に限り**全員可（visits 削除は引き続き本人のみなので、他人の記録が残っているかぎり店舗は消せない）。
 
 > `genres` には DELETE ポリシーが無い（=削除不可）。`restaurants.genre_id` が `ON DELETE RESTRICT` で守られていることもあり、UI からも削除できない設計。必要になれば別途追加する。
 
@@ -190,6 +192,9 @@ $$;
 | `0002_add_visit_comment.sql` | `visits.comment` 列追加 |
 | `0003_add_restaurant_external_urls.sql` | `restaurants.google_maps_url`, `tabelog_url` 列追加 + 既存 `link` の救済データ移行 |
 | `0004_add_restaurants_delete_policy.sql` | `restaurants` の DELETE ポリシー追加（作成者のみ削除可） |
+| `0005_add_restaurants_area.sql` | `restaurants.area` 列追加 + インデックス |
+| `0006_relax_restaurants_update_policy.sql` | `restaurants` の UPDATE ポリシーを invited ユーザー全員に緩和（DELETE は据え置き） |
+| `0007_restaurants_delete_when_no_visits.sql` | `restaurants` の DELETE ポリシーも invited ユーザー全員に緩和、ただし訪問記録 0 件のときのみ |
 
 ## seed（ローカル専用）
 

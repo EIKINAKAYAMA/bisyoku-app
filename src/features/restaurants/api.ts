@@ -180,9 +180,21 @@ export async function updateRestaurant(
 }
 
 export async function deleteRestaurant(id: string): Promise<void> {
-  // visits → ratings は ON DELETE CASCADE で連鎖削除される
-  const { error } = await supabase.from('restaurants').delete().eq('id', id)
+  // RLS は「訪問記録 0 件のとき招待ユーザー全員可」（migration 0007）。
+  // RLS で弾かれた場合 PostgREST はエラーを返さず 0 行影響で成功扱いになるため、
+  // .select() で削除行を必ず受け取り、0 行なら例外を投げてレース時の silent fail を検知する。
+  // 典型例: 自分が画面を見ている間に他人が訪問記録を追加 → ボタンが古い状態で押される。
+  const { data, error } = await supabase
+    .from('restaurants')
+    .delete()
+    .eq('id', id)
+    .select('id')
   if (error) throw error
+  if (!data || data.length === 0) {
+    throw new Error(
+      '店舗を削除できませんでした。訪問記録が追加された可能性があります。'
+    )
+  }
 }
 
 /**

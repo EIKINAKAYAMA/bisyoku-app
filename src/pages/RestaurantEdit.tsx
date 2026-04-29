@@ -1,6 +1,5 @@
 import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAuth } from '@/features/auth/AuthProvider'
 import {
   getRestaurant,
   updateRestaurant,
@@ -16,7 +15,6 @@ import { qk } from '@/lib/queryKeys'
 export function RestaurantEdit() {
   const { id = '' } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { user } = useAuth()
   const queryClient = useQueryClient()
 
   const restaurantQuery = useQuery({
@@ -39,13 +37,6 @@ export function RestaurantEdit() {
   }
   if (!restaurantQuery.data) {
     return <p className="py-12 text-center text-muted-foreground">店舗が見つかりません</p>
-  }
-  if (restaurantQuery.data.created_by !== user?.id) {
-    return (
-      <p className="py-12 text-center text-destructive">
-        登録した本人だけが編集できます
-      </p>
-    )
   }
 
   const initial: RestaurantFormInitial = {

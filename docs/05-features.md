@@ -169,13 +169,20 @@ PostgREST の embed 仕様で `ratings` が配列にも単体にもなり得る�
 ### 構成
 | ファイル | 役割 |
 |---|---|
-| `api.ts` | listGenres / createGenre |
+| `api.ts` | listGenres |
 
 ### API
 - `listGenres()` → `name ASC` で全件
-- `createGenre(name, userId)`：**`name.normalize('NFKC').trim()`** → INSERT。空文字なら例外。`23505`（UNIQUE 違反）は「すでに存在します。再選択してください。」で再ラップ
 
-UI からは `src/components/GenreField.tsx` を経由して使う（Select + 追加用インライン Input）。
+ジャンルは管理者が編集する固定マスターなので、クライアントから追加・編集する API は無い。
+admin の追加運用は [`10-infra-ops.md`](./10-infra-ops.md#ジャンルマスターの管理) を参照。
+
+UI からは `src/components/GenreField.tsx`（自前 Combobox）を経由して使う。
+- ボタンを押すと候補リストが下に展開
+- 上部の検索欄で `NFKC` 正規化 + 部分一致でフィルタ
+- 候補をクリックで選択 → 閉じる
+- 外側クリック / Escape で閉じる
+- 自由入力・新規追加 UI は持たない（master を逸脱させないため）
 
 ---
 

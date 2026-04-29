@@ -1,17 +1,9 @@
-import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Plus } from 'lucide-react'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Button } from '@/components/ui/button'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Check, ChevronsUpDown } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
-import { listGenres, createGenre } from '@/features/genres/api'
-import { useAuth } from '@/features/auth/AuthProvider'
+import { listGenres } from '@/features/genres/api'
 import { qk } from '@/lib/queryKeys'
 
 type Props = {
@@ -19,86 +11,113 @@ type Props = {
   onChange: (id: string) => void
 }
 
+const normalize = (s: string) => s.normalize('NFKC').trim().toLowerCase()
+
 export function GenreField({ value, onChange }: Props) {
-  const { user } = useAuth()
-  const queryClient = useQueryClient()
-  const [adding, setAdding] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
 
   const genresQuery = useQuery({
     queryKey: qk.genres.all,
     queryFn: listGenres,
   })
 
-  const createMut = useMutation({
-    mutationFn: (name: string) => {
-      if (!user) throw new Error('未ログイン')
-      return createGenre(name, user.id)
-    },
-    onSuccess: (genre) => {
-      queryClient.invalidateQueries({ queryKey: qk.genres.all })
-      onChange(genre.id)
-      setAdding(false)
-      setNewName('')
-      setError(null)
-    },
-    onError: (e) => {
-      setError((e as Error).message)
-    },
-  })
+  const selected = useMemo(
+    () => genresQuery.data?.find((g) => g.id === value),
+    [genresQuery.data, value]
+  )
 
-  if (adding) {
-    return (
-      <div className="space-y-2">
-        <div className="flex gap-2">
-          <Input
-            placeholder="新しいジャンル名"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            autoFocus
-          />
-          <Button
-            type="button"
-            onClick={() => createMut.mutate(newName)}
-            disabled={createMut.isPending || !newName.trim()}
-          >
-            追加
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setAdding(false)
-              setNewName('')
-              setError(null)
-            }}
-          >
-            キャンセル
-          </Button>
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-      </div>
-    )
+  const filtered = useMemo(() => {
+    const list = genresQuery.data ?? []
+    const needle = normalize(search)
+    if (!needle) return list
+    return list.filter((g) => normalize(g.name).includes(needle))
+  }, [genresQuery.data, search])
+
+  useEffect(() => {
+    if (!open) return
+    const onMouseDown = (e: MouseEvent) => {
+      if (!wrapperRef.current) return
+      if (!wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false)
+        setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [open])
+
+  useEffect(() => {
+    if (open) searchInputRef.current?.focus()
+  }, [open])
+
+  const handleSelect = (id: string) => {
+    onChange(id)
+    setOpen(false)
+    setSearch('')
   }
 
   return (
-    <div className="flex gap-2">
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger>
-          <SelectValue placeholder="ジャンルを選択" />
-        </SelectTrigger>
-        <SelectContent>
-          {(genresQuery.data ?? []).map((g) => (
-            <SelectItem key={g.id} value={g.id}>
-              {g.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Button type="button" variant="outline" size="icon" onClick={() => setAdding(true)}>
-        <Plus className="h-4 w-4" />
-      </Button>
+    <div ref={wrapperRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          !selected && 'text-muted-foreground'
+        )}
+      >
+        <span className="truncate">{selected ? selected.name : 'ジャンルを選択'}</span>
+        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border bg-popover text-popover-foreground shadow-md">
+          <div className="border-b p-2">
+            <Input
+              ref={searchInputRef}
+              placeholder="ジャンルを検索..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  e.preventDefault()
+                  setOpen(false)
+                  setSearch('')
+                }
+              }}
+              className="h-9"
+            />
+          </div>
+          <ul className="max-h-60 overflow-auto py-1">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-muted-foreground">該当なし</li>
+            ) : (
+              filtered.map((g) => {
+                const isSelected = g.id === value
+                return (
+                  <li key={g.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(g.id)}
+                      className={cn(
+                        'flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground',
+                        isSelected && 'bg-accent text-accent-foreground'
+                      )}
+                    >
+                      <span>{g.name}</span>
+                      {isSelected && <Check className="h-4 w-4" />}
+                    </button>
+                  </li>
+                )
+              })
+            )}
+          </ul>
+        </div>
+      )}
     </div>
   )
 }

@@ -47,7 +47,9 @@ RLS：ポリシー無し ＋ RLS 有効 ＝ Service Role 以外は何もでき�
 
 ### `genres`
 
-ジャンル。任意のログインユーザーが追加可。
+ジャンル。**管理者が編集する固定マスター**。クライアント（招待ユーザー）からは
+SELECT のみ可能で、追加・編集はできない。表記ブレ（「イタリアン」「イタリアン料理」「ピザ」など）
+が起きないよう、migration `0008` で INSERT / UPDATE ポリシーを撤去している。
 
 | 列 | 型 | 制約 |
 |---|---|---|
@@ -56,7 +58,9 @@ RLS：ポリシー無し ＋ RLS 有効 ＝ Service Role 以外は何もでき�
 | `created_by` | uuid | FK → profiles（SET NULL） |
 | `created_at` | timestamptz | DEFAULT now() |
 
-挿入時はクライアントで `NFKC` 正規化 + `trim` → 同名衝突は `23505`（UNIQUE 違反）として検知し、UI でエラー表示。
+`name` は **`NFKC` 正規化 + `trim`** 済み前提（migration の seed 値もこの規約に従う）。
+`created_by` は履歴上の互換のために残しているだけで、admin が SQL から追加した行は NULL になる。
+管理者作業は [`10-infra-ops.md`](./10-infra-ops.md#ジャンルマスターの管理) を参照。
 
 ### `restaurants`
 
@@ -170,7 +174,7 @@ $$;
 |---|---|---|---|---|
 | `profiles` | invited | （Edge Function のみ） | 本人のみ | （ON DELETE CASCADE で auth.users 削除に追従） |
 | `allowed_emails` | × | × | × | × |
-| `genres` | invited | invited 且つ `created_by = auth.uid()` | 作成者のみ | × |
+| `genres` | invited | × | × | × |
 | `restaurants` | invited | invited 且つ `created_by = auth.uid()` | invited（全員） | invited 且つ 訪問記録 0 件 |
 | `visits` | invited | invited 且つ `user_id = auth.uid()` | 本人のみ | 本人のみ |
 | `ratings` | invited | 親 visit が本人のもの | 同左 | 同左 |
@@ -180,7 +184,7 @@ $$;
 
 > `restaurants` の UPDATE / DELETE は migration `0006` / `0007` で「作成者のみ」から「招待ユーザー全員」に緩和された。店舗マスタは家族・友人グループで共有して育てるデータなので、編集は誰でも可能。削除は他人の訪問記録・評価が CASCADE で巻き込まれる事故を防ぐため、**訪問記録が 1 件もぶら下がっていない店舗に限り**全員可（visits 削除は引き続き本人のみなので、他人の記録が残っているかぎり店舗は消せない）。
 
-> `genres` には DELETE ポリシーが無い（=削除不可）。`restaurants.genre_id` が `ON DELETE RESTRICT` で守られていることもあり、UI からも削除できない設計。必要になれば別途追加する。
+> `genres` は **SELECT のみクライアントに開放**。INSERT / UPDATE / DELETE はポリシー無し ＝ Service Role 以外不可。admin は Supabase Studio の SQL Editor から直接 SQL を打って管理する（[`10-infra-ops.md`](./10-infra-ops.md#ジャンルマスターの管理)）。`restaurants.genre_id` が `ON DELETE RESTRICT` なので、参照されている genre は admin でも DELETE できない（先に restaurants.genre_id を別ジャンルに付け替える必要がある）。
 
 ## マイグレーション運用
 
@@ -195,6 +199,7 @@ $$;
 | `0005_add_restaurants_area.sql` | `restaurants.area` 列追加 + インデックス |
 | `0006_relax_restaurants_update_policy.sql` | `restaurants` の UPDATE ポリシーを invited ユーザー全員に緩和（DELETE は据え置き） |
 | `0007_restaurants_delete_when_no_visits.sql` | `restaurants` の DELETE ポリシーも invited ユーザー全員に緩和、ただし訪問記録 0 件のときのみ |
+| `0008_genres_admin_managed.sql` | `genres` の INSERT / UPDATE ポリシー撤去 + デフォルト 25 件のジャンルを seed（既存と重複は ON CONFLICT DO NOTHING でスキップ） |
 
 ## seed（ローカル専用）
 

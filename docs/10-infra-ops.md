@@ -127,6 +127,53 @@ on:
 | 合言葉を変えたい | `supabase secrets set` で再投入。Edge Function 再デプロイ不要 |
 | ロールバックしたい | `git revert <bad-commit-sha>` → main push、または Actions タブから過去成功した workflow を Re-run |
 
+## ジャンルマスターの管理
+
+`genres` テーブルは migration `0008` で **クライアントからの INSERT / UPDATE を禁止** している（表記ブレ防止）。
+追加・改名・削除は admin が **Supabase Studio → SQL Editor** から直接 SQL を打って行う。
+
+### 追加
+
+```sql
+INSERT INTO public.genres (name) VALUES ('お好み焼き')
+ON CONFLICT (name) DO NOTHING;
+```
+
+`name` は **NFKC 正規化済 + trim 済** の表記で揃える（例：`イタリアン` ＋ 半角スペース無し）。
+複数追加する場合は VALUES を並べる。
+
+### 改名
+
+```sql
+UPDATE public.genres SET name = '焼肉・ホルモン' WHERE name = '焼肉';
+```
+
+参照中の `restaurants.genre_id` はそのまま追従する（FK は id 参照のため）。
+
+### 削除（マージ運用）
+
+`genre_id` は `ON DELETE RESTRICT` なので、削除前に **参照を別ジャンルに付け替える必要がある**。
+
+```sql
+-- 例: 旧「ハンバーグ」を「洋食・ビストロ」に統合してから削除
+WITH src AS (SELECT id FROM public.genres WHERE name = 'ハンバーグ'),
+     dst AS (SELECT id FROM public.genres WHERE name = '洋食・ビストロ')
+UPDATE public.restaurants r
+   SET genre_id = (SELECT id FROM dst)
+ WHERE r.genre_id = (SELECT id FROM src);
+
+DELETE FROM public.genres WHERE name = 'ハンバーグ';
+```
+
+UI は `qk.genres.all` でキャッシュしているので、ユーザー側はリロードかセッション再起動で反映。
+
+### 本番デプロイ後の初回クリーンアップ手順
+
+1. `0008` 適用直後はデフォルト 25 件 + 既存ユーザー追加分が混在する
+2. Restaurant 一覧で旧ジャンルが付いている店舗を、編集画面から正しいデフォルトジャンルに付け替え
+3. 上記「削除（マージ運用）」で旧ジャンルを `DELETE`
+4. 完了後、`SELECT name FROM public.genres ORDER BY name;` でデフォルト 25 件のみになっていることを確認
+
 ## 無料枠のキャパ感
 
 | リソース | Free Tier 上限 | 当アプリでの想定 |

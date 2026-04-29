@@ -12,7 +12,7 @@
     "test": "vitest --passWithNoTests",
     "format": "prettier --write .",
     "db:types": "supabase gen types typescript --local > src/types/database.ts",
-    "pwa:icons": "npx -y @vite-pwa/assets-generator@latest --preset minimal-2023 public/favicon.svg"
+    "pwa:icons": "npx -y @vite-pwa/assets-generator@latest"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

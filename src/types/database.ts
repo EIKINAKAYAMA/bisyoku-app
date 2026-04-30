@@ -49,6 +49,30 @@ export type Database = {
         }
         Relationships: []
       }
+      awards: {
+        Row: {
+          category: Database["public"]["Enums"]["award_category_enum"]
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          category: Database["public"]["Enums"]["award_category_enum"]
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          category?: Database["public"]["Enums"]["award_category_enum"]
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
       genres: {
         Row: {
           created_at: string
@@ -148,6 +172,55 @@ export type Database = {
             columns: ["visit_id"]
             isOneToOne: true
             referencedRelation: "visits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      restaurant_awards: {
+        Row: {
+          award_id: string | null
+          created_at: string
+          custom_label: string | null
+          id: string
+          restaurant_id: string
+          year: number | null
+        }
+        Insert: {
+          award_id?: string | null
+          created_at?: string
+          custom_label?: string | null
+          id?: string
+          restaurant_id: string
+          year?: number | null
+        }
+        Update: {
+          award_id?: string | null
+          created_at?: string
+          custom_label?: string | null
+          id?: string
+          restaurant_id?: string
+          year?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "restaurant_awards_award_id_fkey"
+            columns: ["award_id"]
+            isOneToOne: false
+            referencedRelation: "awards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "restaurant_awards_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurant_rating_summary"
+            referencedColumns: ["restaurant_id"]
+          },
+          {
+            foreignKeyName: "restaurant_awards_restaurant_id_fkey"
+            columns: ["restaurant_id"]
+            isOneToOne: false
+            referencedRelation: "restaurants"
             referencedColumns: ["id"]
           },
         ]
@@ -280,6 +353,12 @@ export type Database = {
       is_invited_user: { Args: never; Returns: boolean }
     }
     Enums: {
+      award_category_enum:
+        | "michelin"
+        | "tabelog"
+        | "global"
+        | "japan_media"
+        | "other"
       price_range_enum:
         | "〜2000"
         | "2000〜5000"
@@ -416,6 +495,13 @@ export const Constants = {
   },
   public: {
     Enums: {
+      award_category_enum: [
+        "michelin",
+        "tabelog",
+        "global",
+        "japan_media",
+        "other",
+      ],
       price_range_enum: [
         "〜2000",
         "2000〜5000",

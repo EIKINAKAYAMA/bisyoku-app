@@ -14,8 +14,10 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { GenreField } from '@/components/GenreField'
+import { AwardsField } from '@/components/AwardsField'
 import { PRICE_RANGES } from '@/lib/constants'
 import type { CreateRestaurantInput } from '@/features/restaurants/api'
+import type { AwardEntryInput } from '@/features/awards/api'
 
 // 任意の URL 欄に共通のバリデーション：未入力 OK・入力されていれば http(s)://
 const optionalUrl = z
@@ -47,17 +49,19 @@ export type RestaurantFormInitial = {
   google_maps_url: string | null
   tabelog_url: string | null
   area: string | null
+  awards: AwardEntryInput[]
 }
 
 type Props = {
   initial?: RestaurantFormInitial
-  onSubmit: (input: CreateRestaurantInput) => Promise<void>
+  onSubmit: (input: CreateRestaurantInput, awards: AwardEntryInput[]) => Promise<void>
   submitLabel: string
 }
 
 export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
   const [topError, setTopError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [awards, setAwards] = useState<AwardEntryInput[]>(initial?.awards ?? [])
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -76,17 +80,20 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
     setTopError(null)
     setSubmitting(true)
     try {
-      await onSubmit({
-        name: values.name,
-        link: values.link?.trim() ? values.link.trim() : null,
-        genre_id: values.genre_id,
-        price_range: values.price_range,
-        google_maps_url: values.google_maps_url?.trim()
-          ? values.google_maps_url.trim()
-          : null,
-        tabelog_url: values.tabelog_url?.trim() ? values.tabelog_url.trim() : null,
-        area: values.area?.trim() ? values.area.trim() : null,
-      })
+      await onSubmit(
+        {
+          name: values.name,
+          link: values.link?.trim() ? values.link.trim() : null,
+          genre_id: values.genre_id,
+          price_range: values.price_range,
+          google_maps_url: values.google_maps_url?.trim()
+            ? values.google_maps_url.trim()
+            : null,
+          tabelog_url: values.tabelog_url?.trim() ? values.tabelog_url.trim() : null,
+          area: values.area?.trim() ? values.area.trim() : null,
+        },
+        awards
+      )
     } catch (e) {
       setTopError((e as Error).message)
     } finally {
@@ -205,6 +212,14 @@ export function RestaurantForm({ initial, onSubmit, submitLabel }: Props) {
             {form.formState.errors.tabelog_url.message}
           </p>
         )}
+      </div>
+
+      <div className="space-y-2">
+        <Label className="text-base">称号（任意・複数可）</Label>
+        <AwardsField value={awards} onChange={setAwards} />
+        <p className="text-xs text-muted-foreground">
+          ミシュラン・食べログ百名店などをマスターから選択。マスターに無い称号は「その他」から自由入力。取得年は任意。
+        </p>
       </div>
 
       <div className="space-y-2">

@@ -10,6 +10,7 @@ import {
 import { deleteVisit, listVisitsForRestaurant } from '@/features/visits/api'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { VisitItem } from '@/features/visits/VisitItem'
+import { AwardBadge } from '@/components/AwardBadge'
 import { BackButton } from '@/components/BackButton'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { RestaurantMap } from '@/components/RestaurantMap'
@@ -130,6 +131,18 @@ export function RestaurantDetail() {
                 {r.price_range}
               </span>
             </div>
+            {r.awards.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {r.awards.map((a) => (
+                  <AwardBadge
+                    key={a.id}
+                    name={a.award?.name ?? a.custom_label ?? '(不明)'}
+                    category={a.award?.category ?? 'other'}
+                    year={a.year}
+                  />
+                ))}
+              </div>
+            )}
           </header>
 
           <ExternalLinks

@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
 import type { PriceRange } from '@/lib/constants'
+import type { RestaurantAwardWithMaster } from '@/features/awards/api'
 import { extractCoordsFromMapsUrl } from './mapsUrl'
 import { haversineKm } from './distance'
 
@@ -10,8 +11,24 @@ export type RatingSummary = Database['public']['Views']['restaurant_rating_summa
 export type RestaurantWithSummary = Restaurant & {
   genre: { id: string; name: string } | null
   summary: RatingSummary | null
+  awards: RestaurantAwardWithMaster[]
   /** ユーザー位置からの距離 (km)。nearby フィルタ／sort='nearby' 指定時のみ算出。 */
   distanceKm: number | null
+}
+
+/** restaurants の SELECT 文に awards を embed するための共通フラグメント */
+const RESTAURANT_SELECT = `
+  *,
+  genre:genres(id, name),
+  awards:restaurant_awards(
+    id, restaurant_id, award_id, custom_label, year, created_at,
+    award:awards(id, name, category)
+  )
+`
+
+type EmbeddedRestaurantRow = Restaurant & {
+  genre: { id: string; name: string } | null
+  awards: RestaurantAwardWithMaster[] | null
 }
 
 export type RestaurantSort = 'recent' | 'name' | 'rating-high' | 'nearby'
@@ -32,7 +49,7 @@ export type RestaurantFilters = {
 export async function listRestaurants(
   filters: RestaurantFilters = {}
 ): Promise<RestaurantWithSummary[]> {
-  let restaurantsQuery = supabase.from('restaurants').select('*, genre:genres(id, name)')
+  let restaurantsQuery = supabase.from('restaurants').select(RESTAURANT_SELECT)
 
   if (filters.query) {
     restaurantsQuery = restaurantsQuery.ilike('name', `%${filters.query}%`)
@@ -79,7 +96,8 @@ export async function listRestaurants(
     if (s.restaurant_id) summaryMap.set(s.restaurant_id, s)
   }
 
-  let mapped = (restaurantsResult.data ?? []).map<RestaurantWithSummary>((row) => {
+  const rows = (restaurantsResult.data ?? []) as unknown as EmbeddedRestaurantRow[]
+  let mapped = rows.map<RestaurantWithSummary>((row) => {
     const coords = extractCoordsFromMapsUrl(row.google_maps_url)
     const distanceKm =
       filters.userLocation && coords
@@ -87,6 +105,7 @@ export async function listRestaurants(
         : null
     return {
       ...row,
+      awards: row.awards ?? [],
       summary: summaryMap.get(row.id) ?? null,
       distanceKm,
     }
@@ -121,7 +140,7 @@ export async function getRestaurant(id: string): Promise<RestaurantWithSummary |
   const [restaurantResult, summaryResult] = await Promise.all([
     supabase
       .from('restaurants')
-      .select('*, genre:genres(id, name)')
+      .select(RESTAURANT_SELECT)
       .eq('id', id)
       .maybeSingle(),
     supabase
@@ -135,8 +154,10 @@ export async function getRestaurant(id: string): Promise<RestaurantWithSummary |
   if (summaryResult.error) throw summaryResult.error
   if (!restaurantResult.data) return null
 
+  const row = restaurantResult.data as unknown as EmbeddedRestaurantRow
   return {
-    ...restaurantResult.data,
+    ...row,
+    awards: row.awards ?? [],
     summary: summaryResult.data ?? null,
     distanceKm: null,
   }

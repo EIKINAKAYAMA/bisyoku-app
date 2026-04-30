@@ -186,6 +186,47 @@ UI からは `src/components/GenreField.tsx`（自前 Combobox）を経由して
 
 ---
 
+## `features/awards/`
+
+### 構成
+| ファイル | 役割 |
+|---|---|
+| `api.ts` | listAwards / setAwardsForRestaurant / 型 |
+
+### 型
+```ts
+type AwardCategory = 'michelin' | 'tabelog' | 'global' | 'japan_media' | 'other'
+type Award = { id, name, category, sort_order, created_at }
+type RestaurantAwardWithMaster = {
+  id, restaurant_id, award_id, custom_label, year, created_at,
+  award: Pick<Award, 'id' | 'name' | 'category'> | null
+}
+type AwardEntryInput = { award_id, custom_label, year }
+```
+
+### API
+| 関数 | 動作 |
+|---|---|
+| `listAwards()` | マスター全件を `sort_order ASC, name ASC` で返す |
+| `setAwardsForRestaurant(restaurantId, entries)` | 既存 restaurant_awards を `(award_id, custom_label, year)` のタプルキーで突き合わせ、**差分**（追加・削除）だけを DB に反映。新規 insert を先・既存 delete を後にして、途中失敗時のデータ消失を最小化する（全削除→全挿入だと、insert 側のネットワーク断で「変更していないものまで消失」する事故が起きるため） |
+| `toEntryInput(a)` | RestaurantAwardWithMaster → AwardEntryInput（編集フォームの初期値生成用） |
+
+### UI コンポーネント
+- `src/components/AwardBadge.tsx`：カテゴリ別の色付き Pill バッジ。`size='sm' | 'md'`、`onRemove` で × を出すフォーム編集モード対応
+- `src/components/AwardsField.tsx`：フォーム入力。Dialog でカテゴリ別グルーピング + 検索 + 自由入力（その他） + 取得年（任意）
+
+### 表示位置
+- 店舗詳細画面：店名直下に全件
+- 一覧カード：先頭 2 件 + 残り「+N」表示
+- フォーム：「店舗の URL」セクション直前に配置（カテゴリ性質的に基本情報の後段が自然）
+
+### 1 店舗 = 称号複数の運用
+`restaurants` を `getRestaurant` / `listRestaurants` で取得する際、PostgREST embed
+`awards:restaurant_awards(*, award:awards(*))` でまとめてフェッチする。awards 単独の query は
+持たないので、店舗詳細を invalidate すれば称号表示も最新になる。
+
+---
+
 ## `features/users/`
 
 ### 構成

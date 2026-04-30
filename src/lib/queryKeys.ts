@@ -39,6 +39,9 @@ export const qk = {
   genres: {
     all: ['genres'] as const,
   },
+  awards: {
+    all: ['awards'] as const,
+  },
   profiles: {
     all: ['profiles'] as const,
     detail: (id: string) => ['profile', id] as const,

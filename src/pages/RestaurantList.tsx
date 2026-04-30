@@ -16,6 +16,7 @@ import { useGeolocation } from '@/hooks/useGeolocation'
 import { LIST_PAGE_SIZE, PRICE_RANGES, type PriceRange } from '@/lib/constants'
 import { qk } from '@/lib/queryKeys'
 import { ratingTone } from '@/lib/rating'
+import { AwardBadge } from '@/components/AwardBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -304,6 +305,9 @@ function FilterSelect({
 function RestaurantCard({ restaurant: r }: { restaurant: RestaurantWithSummary }) {
   const avg = r.summary?.avg_overall
   const count = r.summary?.rating_count ?? 0
+  // 称号はカードでは先頭 2 件まで。残りは「+N」で件数だけ示す
+  const visibleAwards = r.awards.slice(0, 2)
+  const hiddenAwardCount = Math.max(0, r.awards.length - visibleAwards.length)
   return (
     <Link to={`/restaurants/${r.id}`} className="group block h-full">
       <Card className="h-full overflow-hidden border-2 transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-primary/50 group-hover:shadow-lg">
@@ -329,6 +333,24 @@ function RestaurantCard({ restaurant: r }: { restaurant: RestaurantWithSummary }
                 </span>
               )}
             </div>
+            {visibleAwards.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {visibleAwards.map((a) => (
+                  <AwardBadge
+                    key={a.id}
+                    size="sm"
+                    name={a.award?.name ?? a.custom_label ?? '(不明)'}
+                    category={a.award?.category ?? 'other'}
+                    year={a.year}
+                  />
+                ))}
+                {hiddenAwardCount > 0 && (
+                  <span className="self-center text-[11px] font-medium text-muted-foreground">
+                    +{hiddenAwardCount}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-gradient-to-br from-primary/10 to-accent/10 px-3 py-2">
             <p

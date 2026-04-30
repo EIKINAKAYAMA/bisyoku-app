@@ -32,7 +32,16 @@ createRoot(root).render(
   <StrictMode>
     <ChunkErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <HashRouter>
+        <HashRouter
+          future={{
+            // v7 の挙動に事前 opt-in。
+            //  - v7_startTransition: state 更新を React.startTransition で包む
+            //  - v7_relativeSplatPath: splat (`*`) 配下の相対パス解決を v7 仕様に
+            // どちらも今のルーティング構成（catch-all は <Navigate> の 1 箇所のみ）で実害なし。
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
           <AuthProvider>
             <App />
           </AuthProvider>

@@ -6,11 +6,18 @@ import {
   type CreateRestaurantInput,
 } from '@/features/restaurants/api'
 import {
+  setAwardsForRestaurant,
+  toEntryInput,
+  type AwardEntryInput,
+} from '@/features/awards/api'
+import {
   RestaurantForm,
   type RestaurantFormInitial,
 } from '@/features/restaurants/RestaurantForm'
 import { BackButton } from '@/components/BackButton'
 import { qk } from '@/lib/queryKeys'
+
+type UpdateArgs = { input: CreateRestaurantInput; awards: AwardEntryInput[] }
 
 export function RestaurantEdit() {
   const { id = '' } = useParams<{ id: string }>()
@@ -24,7 +31,10 @@ export function RestaurantEdit() {
   })
 
   const updateMut = useMutation({
-    mutationFn: (input: CreateRestaurantInput) => updateRestaurant(id, input),
+    mutationFn: async ({ input, awards }: UpdateArgs) => {
+      await updateRestaurant(id, input)
+      await setAwardsForRestaurant(id, awards)
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: qk.restaurants.detail(id) })
       queryClient.invalidateQueries({ queryKey: qk.restaurants.all })
@@ -47,6 +57,7 @@ export function RestaurantEdit() {
     google_maps_url: restaurantQuery.data.google_maps_url,
     tabelog_url: restaurantQuery.data.tabelog_url,
     area: restaurantQuery.data.area,
+    awards: restaurantQuery.data.awards.map(toEntryInput),
   }
 
   return (
@@ -61,8 +72,8 @@ export function RestaurantEdit() {
 
       <RestaurantForm
         initial={initial}
-        onSubmit={async (input) => {
-          await updateMut.mutateAsync(input)
+        onSubmit={async (input, awards) => {
+          await updateMut.mutateAsync({ input, awards })
         }}
         submitLabel="保存"
       />

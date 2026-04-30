@@ -18,6 +18,11 @@ visits ─────< ratings.visit_id  UNIQUE    (CASCADE, 0..1)
 
 `allowed_emails` と `health` は他テーブルと FK を持たない独立テーブル。
 
+```
+awards ─────< restaurant_awards.award_id     (SET NULL)
+restaurants ─< restaurant_awards.restaurant_id  (CASCADE)
+```
+
 ## テーブル定義
 
 ### `profiles`
@@ -113,6 +118,41 @@ SELECT のみ可能で、追加・編集はできない。表記ブレ（「イ�
 
 UNIQUE 制約があるので、編集時は `upsert(..., { onConflict: 'visit_id' })`、評価を外す時は `DELETE WHERE visit_id = ?` でよい。
 
+### `awards`
+
+称号マスター（ミシュラン・食べログ百名店等）。**ジャンルと同じ管理思想**で、
+クライアントは SELECT のみ、admin が Supabase Studio から直接 SQL で管理する。
+
+| 列 | 型 | 制約 |
+|---|---|---|
+| `id` | uuid | PK DEFAULT gen_random_uuid() |
+| `name` | text | NOT NULL **UNIQUE** |
+| `category` | `award_category_enum` | NOT NULL（`michelin` / `tabelog` / `global` / `japan_media` / `other`） |
+| `sort_order` | integer | NOT NULL DEFAULT 100（カテゴリ内の表示順） |
+| `created_at` | timestamptz | DEFAULT now() |
+
+migration `0010` で 30 件の初期マスター（ミシュラン 5 件 / 食べログ 19 件 / 国際 3 件 / 日本メディア 3 件）を seed 済。
+管理者作業は [`10-infra-ops.md`](./10-infra-ops.md#称号マスターの管理) を参照。
+
+### `restaurant_awards`
+
+店舗 ↔ 称号の中間テーブル。1 店舗が複数称号を持てる。
+マスターから選んだ場合は `award_id`、自由入力（その他）の場合は `custom_label` を持つ。
+
+| 列 | 型 | 制約 |
+|---|---|---|
+| `id` | uuid | PK |
+| `restaurant_id` | uuid | NOT NULL FK → restaurants（CASCADE） |
+| `award_id` | uuid | nullable FK → awards（SET NULL） |
+| `custom_label` | text | nullable（マスター不採用時の自由入力） |
+| `year` | smallint | nullable, CHECK 1900〜2100（取得年度） |
+| `created_at` | timestamptz | DEFAULT now() |
+
+CHECK 制約：`award_id` か `custom_label` のどちらかは NOT NULL（両方 NULL は不可）。
+インデックス：`(restaurant_id)`、`(award_id)`。
+
+店舗マスタと同じ哲学で、**invited ユーザー全員が CRUD 可能**（共有データとして育てる）。
+
 ### `health`
 
 Pause 防止 cron 用の単一行テーブル。
@@ -130,6 +170,10 @@ Pause 防止 cron 用の単一行テーブル。
 ```sql
 CREATE TYPE price_range_enum AS ENUM (
   '〜2000', '2000〜5000', '5000〜10000', '10000〜20000', '20000〜'
+);
+
+CREATE TYPE award_category_enum AS ENUM (
+  'michelin', 'tabelog', 'global', 'japan_media', 'other'
 );
 ```
 
@@ -175,6 +219,8 @@ $$;
 | `profiles` | invited | （Edge Function のみ） | 本人のみ | （ON DELETE CASCADE で auth.users 削除に追従） |
 | `allowed_emails` | × | × | × | × |
 | `genres` | invited | × | × | × |
+| `awards` | invited | × | × | × |
+| `restaurant_awards` | invited | invited（全員） | invited（全員） | invited（全員） |
 | `restaurants` | invited | invited 且つ `created_by = auth.uid()` | invited（全員） | invited 且つ 訪問記録 0 件 |
 | `visits` | invited | invited 且つ `user_id = auth.uid()` | 本人のみ | 本人のみ |
 | `ratings` | invited | 親 visit が本人のもの | 同左 | 同左 |
@@ -201,6 +247,7 @@ $$;
 | `0007_restaurants_delete_when_no_visits.sql` | `restaurants` の DELETE ポリシーも invited ユーザー全員に緩和、ただし訪問記録 0 件のときのみ |
 | `0008_genres_admin_managed.sql` | `genres` の INSERT / UPDATE ポリシー撤去 + デフォルト 25 件のジャンルを seed（既存と重複は ON CONFLICT DO NOTHING でスキップ） |
 | `0009_genres_canonical_25.sql` | `genres` を canonical な 25 件のみに固定（本番手動クリーンアップ済の状態をコード側でも正としてソース化） |
+| `0010_awards.sql` | 称号マスター `awards`（admin 管理）と中間テーブル `restaurant_awards`（invited 全員 CRUD）を新設 + デフォルト 30 件の称号 seed |
 
 ## seed（ローカル専用）
 

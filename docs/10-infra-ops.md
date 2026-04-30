@@ -174,6 +174,57 @@ UI は `qk.genres.all` でキャッシュしているので、ユーザー側は
 3. 上記「削除（マージ運用）」で旧ジャンルを `DELETE`
 4. 完了後、`SELECT name FROM public.genres ORDER BY name;` でデフォルト 25 件のみになっていることを確認
 
+## 称号マスターの管理
+
+`awards` テーブルは migration `0010` で **クライアントからの INSERT / UPDATE / DELETE を禁止**
+している（ジャンル管理と同じ思想）。追加・改名・削除は admin が **Supabase Studio → SQL Editor**
+から直接 SQL を打って行う。
+
+カテゴリ enum：`michelin` / `tabelog` / `global` / `japan_media` / `other`。表示色とグルーピングを
+これで決めるので、増やす場合はマイグレーションで enum 拡張 + バッジ色定義（`AwardBadge.tsx`）+
+ラベル定義（`AwardsField.tsx` の `CATEGORY_LABELS` / `CATEGORY_ORDER`）も合わせて更新する。
+
+### 追加
+
+```sql
+INSERT INTO public.awards (name, category, sort_order) VALUES
+  ('お肉博士認定店', 'japan_media', 530)
+ON CONFLICT (name) DO NOTHING;
+```
+
+`sort_order` はカテゴリ内の並び順で、デフォルトは 100。同カテゴリの既存 sort_order を
+SELECT で確認してから決める。
+
+### 改名
+
+```sql
+UPDATE public.awards SET name = '新しい名称' WHERE name = '旧名称';
+```
+
+参照中の `restaurant_awards.award_id` はそのまま追従する（FK は id 参照）。
+
+### 削除
+
+`restaurant_awards.award_id` は `ON DELETE SET NULL` なので、参照中でも削除可能（その場合は
+`custom_label` も NULL のまま残るので、CHECK 制約違反になる行が出る → 先に対象 restaurant_awards を
+更新するか削除しておく）。安全策として：
+
+```sql
+-- 1. 参照中の中間行を確認
+SELECT r.name, ra.* FROM public.restaurant_awards ra
+JOIN public.restaurants r ON r.id = ra.restaurant_id
+WHERE ra.award_id = (SELECT id FROM public.awards WHERE name = '削除したい称号');
+
+-- 2. 中間行を削除（または custom_label にコピーしてから）
+DELETE FROM public.restaurant_awards
+ WHERE award_id = (SELECT id FROM public.awards WHERE name = '削除したい称号');
+
+-- 3. マスターを削除
+DELETE FROM public.awards WHERE name = '削除したい称号';
+```
+
+UI 側のキャッシュは `qk.awards.all` でリロードかセッション再起動で反映。
+
 ## 無料枠のキャパ感
 
 | リソース | Free Tier 上限 | 当アプリでの想定 |

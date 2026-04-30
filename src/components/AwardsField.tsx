@@ -15,6 +15,8 @@ import {
 } from '@/components/ui/dialog'
 import { AwardBadge } from '@/components/AwardBadge'
 import {
+  AWARD_CATEGORIES,
+  AWARD_CATEGORY_LABEL,
   listAwards,
   type Award,
   type AwardCategory,
@@ -22,21 +24,7 @@ import {
 } from '@/features/awards/api'
 import { qk } from '@/lib/queryKeys'
 
-const CATEGORY_LABELS: Record<AwardCategory, string> = {
-  michelin: 'ミシュラン',
-  tabelog: '食べログ',
-  global: '国際',
-  japan_media: '日本メディア',
-  other: 'その他',
-}
-
-const CATEGORY_ORDER: AwardCategory[] = [
-  'michelin',
-  'tabelog',
-  'global',
-  'japan_media',
-  'other',
-]
+const CATEGORY_ORDER: AwardCategory[] = AWARD_CATEGORIES.map((c) => c.value)
 
 const CUSTOM_TOKEN = '__custom__'
 
@@ -219,7 +207,7 @@ function AddAwardDialog({
             {grouped.map(({ category, items }) => (
               <div key={category}>
                 <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {CATEGORY_LABELS[category]}
+                  {AWARD_CATEGORY_LABEL[category]}
                 </p>
                 <ul className="space-y-0.5">
                   {items.map((a) => {

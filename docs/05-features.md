@@ -50,13 +50,16 @@ type RestaurantWithSummary = Restaurant & {
   summary: RatingSummary | null
 }
 
-type RestaurantSort = 'recent' | 'name' | 'rating-high'
+type RestaurantSort = 'recent' | 'name' | 'rating-high' | 'nearby'
 
 type RestaurantFilters = {
-  query?: string         // 部分一致（ILIKE）
+  query?: string                            // 部分一致（ILIKE）
   genreId?: string
   priceRange?: PriceRange
-  minOverall?: number    // クライアント側フィルタ
+  minOverall?: number                       // クライアント側フィルタ
+  area?: string
+  awardCategory?: AwardCategory             // クライアント側フィルタ（embed 済 awards から判定）
+  userLocation?: { lat: number; lng: number }
   sort?: RestaurantSort
   limit?: number
   offset?: number
@@ -66,7 +69,7 @@ type RestaurantFilters = {
 ### API
 | 関数 | 動作 |
 |---|---|
-| `listRestaurants(filters)` | restaurants と summary を**並列取得しクライアントで merge**。`minOverall` フィルタと `rating-high` ソートはクライアント側適用（VIEW に FK が無く PostgREST embed が効かないため） |
+| `listRestaurants(filters)` | restaurants と summary を**並列取得しクライアントで merge**。`minOverall` / `awardCategory` フィルタと `rating-high` / `nearby` ソートはクライアント側適用（summary VIEW に FK が無く embed が効かない・awards は embed 済を使う） |
 | `getRestaurant(id)` | restaurants と summary を並列取得し merge |
 | `createRestaurant(input, userId)` | `created_by = userId` を埋めて INSERT |
 | `updateRestaurant(id, input)` | UPDATE |

@@ -39,10 +39,13 @@ URL 上は `https://<host>/bisyoku-app/#/restaurants/abc` のように `#/` が�
 ## 各ページの責務（要約）
 
 ### `RestaurantList`
-- 検索キーワード（`useDebounced` 300ms）/ ジャンル / 価格帯 / 総合最低点 / ソート（recent / rating-high / name）
-- 「もっと見る」で `+LIST_PAGE_SIZE`（30 件）
-- `genresQuery` も並列で fetch してフィルタの選択肢に
-- `RestaurantCard` で店名・ジャンル・価格帯バッジ + 平均総合スコア
+- レイアウトは **チップバー方式**（Google Maps / Airbnb / 食べログ系の標準）：検索 + プリセット行 + フィルタチップ行 + コンパクト一覧。カード表示は提供しない（家族・友人スケールでは情報密度を優先）
+- フィルタ：検索キーワード（`useDebounced` 300ms）/ ジャンル / エリア / 価格帯 / 総合最低点 / 称号カテゴリ / ソート（recent / rating-high / name / nearby）/ 現在地
+- **状態は全て URL クエリと双方向同期**（`useSearchParams` で単一の真の出所）。ブックマーク・共有・ブラウザ戻る/進む対応。`q` / `genre` / `area` / `price` / `min` / `award` / `sort` の 7 キー。default 値はキーごと URL から削除して URL を綺麗に保つ。`history.replaceState` 固定（フィルタ操作で履歴を増やさない）
+- クイックプリセット：「ミシュラン」「百名店」「高評価 8.0+」「近くて高評価」（複数フィルタを一括設定。指定外は default にリセット、検索キーワードのみ温存）
+- 「もっと見る」で `+LIST_PAGE_SIZE`（30 件）。`limit + 1` を fetch して超過分有無で `hasMore` を判定（クライアント側 filter で last page がちょうど limit に切れた時の「もっと見る → 0 件追加」を防ぐ）
+- `genresQuery` / `listRestaurantAreas` を並列 fetch してチップの選択肢に
+- 行レンダラ：`RestaurantRow`（評価 56px 固定幅で右寄せ、行を跨いで縦に揃う）
 - `useQuery` のキー：`qk.restaurants.list(filters)`
 
 ### `RestaurantNew` / `RestaurantEdit`

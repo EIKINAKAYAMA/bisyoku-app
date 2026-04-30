@@ -7,6 +7,23 @@ export type AwardCategory =
   | 'japan_media'
   | 'other'
 
+/**
+ * 称号カテゴリの表示名と並び順。フォーム・フィルタ・チップで共通使用するため
+ * ここを正としてエクスポートする。enum を増やすときは migration の
+ * `award_category_enum` と一緒にここも更新する。
+ */
+export const AWARD_CATEGORIES: Array<{ value: AwardCategory; label: string }> = [
+  { value: 'michelin', label: 'ミシュラン' },
+  { value: 'tabelog', label: '食べログ' },
+  { value: 'global', label: '国際' },
+  { value: 'japan_media', label: '日本メディア' },
+  { value: 'other', label: 'その他' },
+]
+
+export const AWARD_CATEGORY_LABEL: Record<AwardCategory, string> = Object.fromEntries(
+  AWARD_CATEGORIES.map((c) => [c.value, c.label])
+) as Record<AwardCategory, string>
+
 export type Award = {
   id: string
   name: string

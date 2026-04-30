@@ -1,7 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import type { Database } from '@/types/database'
 import type { PriceRange } from '@/lib/constants'
-import type { RestaurantAwardWithMaster } from '@/features/awards/api'
+import type { AwardCategory, RestaurantAwardWithMaster } from '@/features/awards/api'
 import { extractCoordsFromMapsUrl } from './mapsUrl'
 import { haversineKm } from './distance'
 
@@ -39,6 +39,8 @@ export type RestaurantFilters = {
   priceRange?: PriceRange
   minOverall?: number
   area?: string
+  /** 称号カテゴリ。指定するとそのカテゴリの称号を 1 件以上持つ店舗のみ。 */
+  awardCategory?: AwardCategory
   /** 近い順ソート／距離表示の起点。sort='nearby' のときに必要。 */
   userLocation?: { lat: number; lng: number }
   sort?: RestaurantSort
@@ -113,6 +115,15 @@ export async function listRestaurants(
 
   if (filters.minOverall != null) {
     mapped = mapped.filter((r) => (r.summary?.avg_overall ?? 0) >= filters.minOverall!)
+  }
+
+  if (filters.awardCategory) {
+    // 称号は restaurants embed で取得済みのため、追加 round-trip 無しでクライアント側絞り込み。
+    // PostgREST 側で絞ると `awards` 配列が他カテゴリの称号も落ちてしまい表示が壊れるので、
+    // 「親行を残しつつ awards 全件を保持」できるクライアント側で実施する。
+    mapped = mapped.filter((r) =>
+      r.awards.some((a) => (a.award?.category ?? 'other') === filters.awardCategory)
+    )
   }
 
   if (filters.sort === 'rating-high') {

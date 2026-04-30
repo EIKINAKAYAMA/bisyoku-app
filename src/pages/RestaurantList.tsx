@@ -1,7 +1,16 @@
-import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useCallback, useMemo, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { MapPin, Plus, Search } from 'lucide-react'
+import {
+  Award,
+  MapPin,
+  Plus,
+  Search,
+  Sparkles,
+  Trophy,
+  X,
+  type LucideIcon,
+} from 'lucide-react'
 import {
   listRestaurantAreas,
   listRestaurants,
@@ -16,42 +25,222 @@ import { useGeolocation } from '@/hooks/useGeolocation'
 import { LIST_PAGE_SIZE, PRICE_RANGES, type PriceRange } from '@/lib/constants'
 import { qk } from '@/lib/queryKeys'
 import { ratingTone } from '@/lib/rating'
-import { AwardBadge } from '@/components/AwardBadge'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { cn } from '@/lib/utils'
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+  AWARD_CATEGORIES,
+  type AwardCategory,
+} from '@/features/awards/api'
+import { AwardBadge } from '@/components/AwardBadge'
+import { FilterChip } from '@/components/FilterChip'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
 const ALL = '__all__'
 
-const SORT_OPTIONS: Array<{ value: RestaurantSort; label: string }> = [
+const SORT_OPTIONS: ReadonlyArray<{ value: RestaurantSort; label: string }> = [
   { value: 'recent', label: '新着順' },
   { value: 'rating-high', label: '評価が高い順' },
   { value: 'name', label: '名前順' },
   { value: 'nearby', label: '近い順' },
 ]
 
+const PRICE_OPTIONS = PRICE_RANGES.map((p) => ({ value: p, label: p }))
+
+const MIN_OVERALL_OPTIONS = [5, 6, 7, 8, 9].map((n) => ({
+  value: String(n),
+  label: `${n} 以上`,
+}))
+
+const AWARD_OPTIONS = AWARD_CATEGORIES.map((c) => ({
+  value: c.value,
+  label: c.label,
+}))
+
+// 並びチップ用の options。FilterChip 側で defaultValue と同じものは除外されるが、
+// SORT_OPTIONS は ReadonlyArray なので Option[] に揃えるため map している。
+const SORT_OPTIONS_FOR_CHIP = SORT_OPTIONS.map((o) => ({
+  value: o.value,
+  label: o.label,
+}))
+
+/**
+ * クイックプリセット：1 タップで複数フィルタを同時適用するショートカット。
+ * 適用時、`state` で指定しなかったフィールドは ALL/default にリセット
+ * （前回の状態が残らない）。検索クエリだけは予め入力していたものを温存する。
+ */
+type Preset = {
+  id: string
+  label: string
+  Icon: LucideIcon
+  state: {
+    genreId?: string
+    priceRange?: string
+    minOverall?: string
+    area?: string
+    awardCategory?: string
+    sort?: RestaurantSort
+  }
+  requiresLocation?: boolean
+}
+
+const PRESETS: Preset[] = [
+  {
+    id: 'michelin',
+    label: 'ミシュラン',
+    Icon: Award,
+    state: { awardCategory: 'michelin' },
+  },
+  {
+    id: 'hyakumeiten',
+    label: '百名店',
+    Icon: Trophy,
+    state: { awardCategory: 'tabelog' },
+  },
+  {
+    id: 'high-rated',
+    label: '高評価 8.0+',
+    Icon: Sparkles,
+    state: { minOverall: '8', sort: 'rating-high' },
+  },
+  {
+    id: 'nearby-good',
+    label: '近くて高評価',
+    Icon: MapPin,
+    state: { minOverall: '7', sort: 'nearby' },
+    requiresLocation: true,
+  },
+]
+
+/** 不正な URL クエリ値が入っていたら default に倒す */
+function safeParam<T extends string>(
+  raw: string | null,
+  allowed: ReadonlyArray<T | string>,
+  fallback: T
+): T {
+  return raw && allowed.includes(raw) ? (raw as T) : fallback
+}
+
 export function RestaurantList() {
-  const [query, setQuery] = useState('')
-  const [genreId, setGenreId] = useState<string>(ALL)
-  const [priceRange, setPriceRange] = useState<string>(ALL)
-  const [minOverall, setMinOverall] = useState<string>(ALL)
-  const [area, setArea] = useState<string>(ALL)
-  const [sort, setSort] = useState<RestaurantSort>('recent')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const geo = useGeolocation()
+
+  // ---- URL から導出する filter state（単一の真の出所） ----
+  const query = searchParams.get('q') ?? ''
+  const genreId = searchParams.get('genre') ?? ALL
+  const area = searchParams.get('area') ?? ALL
+  const priceRange = safeParam<string>(searchParams.get('price'), PRICE_RANGES, ALL)
+  const minOverall = safeParam<string>(
+    searchParams.get('min'),
+    MIN_OVERALL_OPTIONS.map((o) => o.value),
+    ALL
+  )
+  const awardCategory = safeParam<string>(
+    searchParams.get('award'),
+    AWARD_CATEGORIES.map((c) => c.value),
+    ALL
+  )
+  const sort = safeParam<RestaurantSort>(
+    searchParams.get('sort'),
+    SORT_OPTIONS.map((o) => o.value),
+    'recent'
+  )
+
+  // limit はページング状態。共有 URL に含めても意味が薄いので URL 同期しない。
   const [limit, setLimit] = useState(LIST_PAGE_SIZE)
 
-  const geo = useGeolocation()
   const debouncedQuery = useDebounced(query, 300)
 
-  // 位置情報が取れていれば常に距離を算出してカード上に表示する。
-  // 「近い順」ソートのときだけ並び替えにも使う。
+  /** 1 つの URL クエリパラメータだけ更新するヘルパー（同時にページもリセット） */
+  const updateParam = useCallback(
+    (key: string, value: string, defaultValue: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          if (value === defaultValue || value === '') next.delete(key)
+          else next.set(key, value)
+          return next
+        },
+        { replace: true }
+      )
+      setLimit(LIST_PAGE_SIZE)
+    },
+    [setSearchParams, setLimit]
+  )
+
+  /** 複数フィルタをまとめて差し替える（プリセット適用 / 全クリア用）。
+   *  指定外 / default 値は URL に書かない（URL を綺麗に保つ） */
+  const replaceParams = useCallback(
+    (next: {
+      q?: string
+      genre?: string
+      area?: string
+      price?: string
+      min?: string
+      award?: string
+      sort?: RestaurantSort
+    }) => {
+      const params = new URLSearchParams()
+      if (next.q) params.set('q', next.q)
+      if (next.genre && next.genre !== ALL) params.set('genre', next.genre)
+      if (next.area && next.area !== ALL) params.set('area', next.area)
+      if (next.price && next.price !== ALL) params.set('price', next.price)
+      if (next.min && next.min !== ALL) params.set('min', next.min)
+      if (next.award && next.award !== ALL) params.set('award', next.award)
+      if (next.sort && next.sort !== 'recent') params.set('sort', next.sort)
+      setSearchParams(params, { replace: true })
+      setLimit(LIST_PAGE_SIZE)
+    },
+    [setSearchParams]
+  )
+
+  const handleNearbyClear = () => {
+    geo.clear()
+    if (sort === 'nearby') updateParam('sort', 'recent', 'recent')
+  }
+
+  /** 並びを「近い順」にしようとしたら位置情報を要求 */
+  const handleSortChange = async (v: string) => {
+    const next = v as RestaurantSort
+    if (next === 'nearby' && !geo.coords) {
+      const coords = await geo.request()
+      if (!coords) return
+    }
+    updateParam('sort', next, 'recent')
+  }
+
+  const handleGeolocationToggle = async () => {
+    if (geo.status === 'success') {
+      handleNearbyClear()
+      return
+    }
+    if (geo.status === 'loading') return
+    await geo.request()
+  }
+
+  const applyPreset = async (preset: Preset) => {
+    if (preset.requiresLocation && !geo.coords) {
+      const coords = await geo.request()
+      if (!coords) return
+    }
+    replaceParams({
+      q: query, // 検索文字列だけは温存（"渋谷の" + ミシュラン、のような複合意図に応える）
+      genre: preset.state.genreId,
+      area: preset.state.area,
+      price: preset.state.priceRange,
+      min: preset.state.minOverall,
+      award: preset.state.awardCategory,
+      sort: preset.state.sort,
+    })
+  }
+
+  const clearAll = () => {
+    replaceParams({})
+  }
+
+  // ---- API ----
+  // limit + 1 取って超過分の有無で hasMore を判定。クライアント側 filter
+  // （minOverall / awardCategory / rating-high ソート等）でちょうど limit に
+  // 切れた時の「もっと見るを押しても 0 件追加」を防ぐ。
   const filters: RestaurantFilters = useMemo(
     () => ({
       query: debouncedQuery.trim() || undefined,
@@ -59,11 +248,23 @@ export function RestaurantList() {
       priceRange: priceRange === ALL ? undefined : (priceRange as PriceRange),
       minOverall: minOverall === ALL ? undefined : Number(minOverall),
       area: area === ALL ? undefined : area,
+      awardCategory:
+        awardCategory === ALL ? undefined : (awardCategory as AwardCategory),
       userLocation: geo.coords ?? undefined,
       sort,
-      limit,
+      limit: limit + 1,
     }),
-    [debouncedQuery, genreId, priceRange, minOverall, area, geo.coords, sort, limit]
+    [
+      debouncedQuery,
+      genreId,
+      priceRange,
+      minOverall,
+      area,
+      awardCategory,
+      geo.coords,
+      sort,
+      limit,
+    ]
   )
 
   const restaurantsQuery = useQuery({
@@ -71,62 +272,70 @@ export function RestaurantList() {
     queryFn: () => listRestaurants(filters),
   })
 
-  const genresQuery = useQuery({
-    queryKey: qk.genres.all,
-    queryFn: listGenres,
-  })
-
+  const genresQuery = useQuery({ queryKey: qk.genres.all, queryFn: listGenres })
   const areasQuery = useQuery({
     queryKey: qk.restaurants.areas,
     queryFn: listRestaurantAreas,
   })
 
-  // フィルタを変えたら page を 1 に戻す
-  const resetLimit = () => setLimit(LIST_PAGE_SIZE)
+  const fetched = restaurantsQuery.data ?? []
+  const restaurants = fetched.slice(0, limit)
+  const hasMore = fetched.length > limit
 
-  const handleNearbyClick = async () => {
-    // 既に取得済みなら近い順ソートに切り替えるだけ
-    if (geo.coords) {
-      setSort('nearby')
-      resetLimit()
-      return
+  // ---- chip options ----
+  const genreOptions = useMemo(
+    () => (genresQuery.data ?? []).map((g) => ({ value: g.id, label: g.name })),
+    [genresQuery.data]
+  )
+  const areaOptions = useMemo(
+    () => (areasQuery.data ?? []).map((a) => ({ value: a, label: a })),
+    [areasQuery.data]
+  )
+
+  const activePresetId = useMemo(() => {
+    for (const p of PRESETS) {
+      if (
+        (p.state.genreId ?? ALL) === genreId &&
+        (p.state.priceRange ?? ALL) === priceRange &&
+        (p.state.minOverall ?? ALL) === minOverall &&
+        (p.state.area ?? ALL) === area &&
+        (p.state.awardCategory ?? ALL) === awardCategory &&
+        (p.state.sort ?? 'recent') === sort
+      ) {
+        return p.id
+      }
     }
-    const coords = await geo.request()
-    if (coords) {
-      setSort('nearby')
-      resetLimit()
-    }
-  }
+    return null
+  }, [genreId, priceRange, minOverall, area, awardCategory, sort])
 
-  const handleNearbyClear = () => {
-    geo.clear()
-    if (sort === 'nearby') setSort('recent')
-    resetLimit()
-  }
-
-  // 「近い順」が直接選ばれた場合は位置情報を要求する。
-  // 取得失敗時は sort を変えずに維持する（距離不明で created_at 順に見えてしまうのを防ぐ）。
-  const handleSortChange = async (v: string) => {
-    const next = v as RestaurantSort
-    if (next === 'nearby' && !geo.coords) {
-      const coords = await geo.request()
-      if (!coords) return
-    }
-    setSort(next)
-    resetLimit()
-  }
-
-  const restaurants = restaurantsQuery.data ?? []
-  const hasMore = restaurants.length === limit
+  const hasAnyFilter =
+    query.trim().length > 0 ||
+    genreId !== ALL ||
+    area !== ALL ||
+    priceRange !== ALL ||
+    minOverall !== ALL ||
+    awardCategory !== ALL ||
+    sort !== 'recent'
 
   return (
-    <div className="space-y-6">
-      <header className="flex items-center justify-between gap-4">
+    <div className="space-y-5">
+      <header className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">店舗一覧</h1>
-          <p className="mt-1 text-sm text-muted-foreground md:text-base">
-            {restaurants.length} 件{hasMore ? '（さらに表示可）' : ''}
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground md:text-base">
+            <span>
+              {restaurants.length} 件{hasMore ? '（さらに表示可）' : ''}
+            </span>
+            {hasAnyFilter && (
+              <button
+                type="button"
+                onClick={clearAll}
+                className="inline-flex h-7 items-center rounded-md border border-input bg-background px-2.5 text-xs font-medium text-primary hover:bg-accent"
+              >
+                すべてクリア
+              </button>
+            )}
+          </div>
         </div>
         <Button asChild size="lg" className="hidden md:inline-flex">
           <Link to="/restaurants/new">
@@ -135,105 +344,104 @@ export function RestaurantList() {
         </Button>
       </header>
 
-      <div className="space-y-3 rounded-lg border bg-card p-3 md:p-4">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="店名で検索"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              resetLimit()
-            }}
-            className="pl-9"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <FilterSelect
-            label="ジャンル"
-            value={genreId}
-            onValueChange={(v) => {
-              setGenreId(v)
-              resetLimit()
-            }}
-            options={[
-              { value: ALL, label: '全て' },
-              ...(genresQuery.data ?? []).map((g) => ({ value: g.id, label: g.name })),
-            ]}
-          />
-          <FilterSelect
-            label="エリア"
-            value={area}
-            onValueChange={(v) => {
-              setArea(v)
-              resetLimit()
-            }}
-            options={[
-              { value: ALL, label: '全て' },
-              ...(areasQuery.data ?? []).map((a) => ({ value: a, label: a })),
-            ]}
-          />
-          <FilterSelect
-            label="価格帯"
-            value={priceRange}
-            onValueChange={(v) => {
-              setPriceRange(v)
-              resetLimit()
-            }}
-            options={[
-              { value: ALL, label: '全て' },
-              ...PRICE_RANGES.map((p) => ({ value: p, label: p })),
-            ]}
-          />
-          <FilterSelect
-            label="総合 ≥"
-            value={minOverall}
-            onValueChange={(v) => {
-              setMinOverall(v)
-              resetLimit()
-            }}
-            options={[
-              { value: ALL, label: '全て' },
-              ...[5, 6, 7, 8, 9].map((n) => ({ value: String(n), label: `${n}` })),
-            ]}
-          />
-          <FilterSelect
-            label="並び"
-            value={sort}
-            onValueChange={handleSortChange}
-            options={SORT_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {geo.status === 'success' ? (
-            <>
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
-                <MapPin className="h-3 w-3" /> 現在地から距離を表示中
-              </span>
-              <Button variant="ghost" size="sm" onClick={handleNearbyClear}>
-                解除
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleNearbyClick}
-              disabled={geo.status === 'loading'}
-            >
-              <MapPin className="h-4 w-4" />
-              {geo.status === 'loading' ? '位置情報を取得中…' : '近くの店を表示'}
-            </Button>
-          )}
-          {geo.status === 'error' && (
-            <span className="text-xs text-destructive">
-              位置情報を取得できませんでした：{geo.error}
-            </span>
-          )}
-        </div>
+      {/* 検索 */}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          type="search"
+          placeholder="店名で検索"
+          aria-label="店名で検索"
+          value={query}
+          onChange={(e) => updateParam('q', e.target.value, '')}
+          className="pl-9"
+        />
       </div>
 
+      {/* プリセット chips（モバイルは横スクロール、デスクトップは wrap） */}
+      <div
+        className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 md:flex-wrap md:overflow-visible"
+        role="group"
+        aria-label="クイックフィルタ"
+      >
+        {PRESETS.map((p) => {
+          const active = activePresetId === p.id
+          return (
+            <button
+              key={p.id}
+              type="button"
+              onClick={() => applyPreset(p)}
+              aria-pressed={active}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                active
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
+              )}
+            >
+              <p.Icon className="h-3.5 w-3.5" />
+              {p.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* フィルタ chip bar（モバイルは横スクロール、デスクトップは wrap） */}
+      <div
+        className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5 md:flex-wrap md:overflow-visible"
+        role="group"
+        aria-label="フィルタ"
+      >
+        <FilterChip
+          label="ジャンル"
+          value={genreId}
+          defaultValue={ALL}
+          onChange={(v) => updateParam('genre', v, ALL)}
+          options={genreOptions}
+        />
+        <FilterChip
+          label="エリア"
+          value={area}
+          defaultValue={ALL}
+          onChange={(v) => updateParam('area', v, ALL)}
+          options={areaOptions}
+        />
+        <FilterChip
+          label="価格"
+          value={priceRange}
+          defaultValue={ALL}
+          onChange={(v) => updateParam('price', v, ALL)}
+          options={PRICE_OPTIONS}
+        />
+        <FilterChip
+          label="総合"
+          value={minOverall}
+          defaultValue={ALL}
+          onChange={(v) => updateParam('min', v, ALL)}
+          options={MIN_OVERALL_OPTIONS}
+        />
+        <FilterChip
+          label="称号"
+          value={awardCategory}
+          defaultValue={ALL}
+          onChange={(v) => updateParam('award', v, ALL)}
+          options={AWARD_OPTIONS}
+        />
+        <FilterChip
+          label="並び"
+          value={sort}
+          defaultValue="recent"
+          onChange={handleSortChange}
+          options={SORT_OPTIONS_FOR_CHIP}
+          allLabel="新着順"
+        />
+        <GeolocationChip
+          status={geo.status}
+          error={geo.error}
+          onToggle={handleGeolocationToggle}
+        />
+      </div>
+
+      {/* 一覧本体 */}
       {restaurantsQuery.isLoading && (
         <p className="py-12 text-center text-muted-foreground">読み込み中...</p>
       )}
@@ -245,18 +453,24 @@ export function RestaurantList() {
       {!restaurantsQuery.isLoading && restaurants.length === 0 && (
         <div className="rounded-lg border border-dashed py-12 text-center">
           <p className="text-muted-foreground">条件に一致する店舗がありません。</p>
-          <Button asChild variant="outline" size="sm" className="mt-4">
-            <Link to="/restaurants/new">
-              <Plus className="h-4 w-4" /> 店を登録する
-            </Link>
-          </Button>
+          {hasAnyFilter ? (
+            <Button variant="outline" size="sm" className="mt-4" onClick={clearAll}>
+              すべてクリア
+            </Button>
+          ) : (
+            <Button asChild variant="outline" size="sm" className="mt-4">
+              <Link to="/restaurants/new">
+                <Plus className="h-4 w-4" /> 店を登録する
+              </Link>
+            </Button>
+          )}
         </div>
       )}
 
-      <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <ul className="space-y-2">
         {restaurants.map((r) => (
           <li key={r.id}>
-            <RestaurantCard restaurant={r} />
+            <RestaurantRow restaurant={r} />
           </li>
         ))}
       </ul>
@@ -272,98 +486,110 @@ export function RestaurantList() {
   )
 }
 
-function FilterSelect({
-  label,
-  value,
-  onValueChange,
-  options,
+/**
+ * 位置情報トグルチップ。chip bar の他のフィルタと並ぶ見た目に揃える。
+ * - idle: outline / 「現在地」
+ * - loading: outline / 「位置情報取得中...」
+ * - success: primary / 「現在地: 使用中」 ✕
+ * - error: destructive 系 / エラーメッセージは title に格納
+ */
+function GeolocationChip({
+  status,
+  error,
+  onToggle,
 }: {
-  label: string
-  value: string
-  onValueChange: (v: string) => void
-  options: Array<{ value: string; label: string }>
+  status: ReturnType<typeof useGeolocation>['status']
+  error: string | null
+  onToggle: () => void
 }) {
+  const isActive = status === 'success'
+  const label =
+    status === 'loading'
+      ? '位置情報取得中...'
+      : isActive
+        ? '現在地: 使用中'
+        : '現在地'
   return (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
-      <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {options.map((o) => (
-            <SelectItem key={o.value} value={o.value}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={status === 'loading'}
+      title={status === 'error' && error ? `位置情報エラー: ${error}` : undefined}
+      aria-pressed={isActive}
+      className={cn(
+        'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60',
+        isActive
+          ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
+          : status === 'error'
+            ? 'border-destructive/40 bg-destructive/5 text-destructive hover:bg-destructive/10'
+            : 'border-input bg-background hover:bg-accent hover:text-accent-foreground'
+      )}
+    >
+      <MapPin className="h-3.5 w-3.5" />
+      {label}
+      {isActive && <X className="h-3 w-3 opacity-80" />}
+    </button>
   )
 }
 
-function RestaurantCard({ restaurant: r }: { restaurant: RestaurantWithSummary }) {
+/**
+ * コンパクト一覧の 1 行。評価列を固定幅で右寄せにし、行を跨いで縦に揃えることで
+ * カード表示よりも比較・スキャンしやすくする狙い。
+ * モバイルの縦長スクロールでも 1 列で詰めて表示できる。
+ */
+function RestaurantRow({ restaurant: r }: { restaurant: RestaurantWithSummary }) {
   const avg = r.summary?.avg_overall
   const count = r.summary?.rating_count ?? 0
-  // 称号はカードでは先頭 2 件まで。残りは「+N」で件数だけ示す
-  const visibleAwards = r.awards.slice(0, 2)
+  const visibleAwards = r.awards.slice(0, 3)
   const hiddenAwardCount = Math.max(0, r.awards.length - visibleAwards.length)
+
+  // 「ジャンル · エリア · 価格 · 距離」を中黒で 1 行に。エリア/距離は無ければ skip。
+  const meta: string[] = [r.genre?.name ?? '未分類', r.price_range]
+  if (r.area) meta.splice(1, 0, r.area)
+  if (r.distanceKm != null) meta.push(formatDistance(r.distanceKm))
+
   return (
-    <Link to={`/restaurants/${r.id}`} className="group block h-full">
-      <Card className="h-full overflow-hidden border-2 transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-primary/50 group-hover:shadow-lg">
-        <CardContent className="flex h-full items-start justify-between gap-3 p-4 md:p-5">
-          <div className="min-w-0 flex-1 space-y-2">
-            <p className="truncate text-base font-semibold md:text-lg">{r.name}</p>
-            <div className="flex flex-wrap gap-1.5">
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary md:text-xs">
-                {r.genre?.name ?? '未分類'}
-              </span>
-              <span className="rounded-full bg-accent/30 px-2 py-0.5 text-[11px] font-medium text-accent-foreground md:text-xs">
-                {r.price_range}
-              </span>
-              {r.area && (
-                <span className="inline-flex items-center gap-0.5 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:text-xs">
-                  <MapPin className="h-3 w-3" />
-                  {r.area}
-                </span>
-              )}
-              {r.distanceKm != null && (
-                <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground md:text-xs">
-                  {formatDistance(r.distanceKm)}
+    <Link to={`/restaurants/${r.id}`} className="group block">
+      <div className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors group-hover:border-primary/50 group-hover:bg-accent/40">
+        <div className="min-w-0 flex-1 space-y-1">
+          <p className="truncate text-sm font-semibold md:text-base">{r.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
+            {meta.join(' · ')}
+          </p>
+          {visibleAwards.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1">
+              {visibleAwards.map((a) => (
+                <AwardBadge
+                  key={a.id}
+                  size="sm"
+                  name={a.award?.name ?? a.custom_label ?? '(不明)'}
+                  category={a.award?.category ?? 'other'}
+                  year={a.year}
+                />
+              ))}
+              {hiddenAwardCount > 0 && (
+                <span className="text-[11px] font-medium text-muted-foreground">
+                  +{hiddenAwardCount}
                 </span>
               )}
             </div>
-            {visibleAwards.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {visibleAwards.map((a) => (
-                  <AwardBadge
-                    key={a.id}
-                    size="sm"
-                    name={a.award?.name ?? a.custom_label ?? '(不明)'}
-                    category={a.award?.category ?? 'other'}
-                    year={a.year}
-                  />
-                ))}
-                {hiddenAwardCount > 0 && (
-                  <span className="self-center text-[11px] font-medium text-muted-foreground">
-                    +{hiddenAwardCount}
-                  </span>
-                )}
-              </div>
+          )}
+        </div>
+        <div className="w-14 shrink-0 text-center">
+          <p
+            className={cn(
+              'text-2xl font-bold leading-none tabular-nums',
+              avg != null ? ratingTone(avg) : 'text-muted-foreground'
             )}
-          </div>
-          <div className="flex shrink-0 flex-col items-center gap-0.5 rounded-xl bg-gradient-to-br from-primary/10 to-accent/10 px-3 py-2">
-            <p
-              className={`text-2xl font-bold leading-none tabular-nums md:text-3xl ${avg != null ? ratingTone(avg) : 'text-muted-foreground'}`}
-            >
-              {avg != null ? avg.toFixed(1) : '—'}
-            </p>
-            <p className="text-[10px] text-muted-foreground">
-              {count > 0 ? `${count} 件` : '未評価'}
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          >
+            {avg != null ? avg.toFixed(1) : '—'}
+          </p>
+          <p className="mt-0.5 text-[10px] text-muted-foreground">
+            {count > 0 ? `${count} 件` : '未評価'}
+          </p>
+        </div>
+      </div>
     </Link>
   )
 }
+

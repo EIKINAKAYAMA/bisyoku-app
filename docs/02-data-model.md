@@ -248,6 +248,7 @@ $$;
 | `0008_genres_admin_managed.sql` | `genres` の INSERT / UPDATE ポリシー撤去 + デフォルト 25 件のジャンルを seed（既存と重複は ON CONFLICT DO NOTHING でスキップ） |
 | `0009_genres_canonical_25.sql` | `genres` を canonical な 25 件のみに固定（本番手動クリーンアップ済の状態をコード側でも正としてソース化） |
 | `0010_awards.sql` | 称号マスター `awards`（admin 管理）と中間テーブル `restaurant_awards`（invited 全員 CRUD）を新設 + デフォルト 30 件の称号 seed |
+| `0011_awards_hyakumeiten_update.sql` | 食べログ百名店マスターを単一 row「食べログ百名店」に集約（0010 で投入した 16 ジャンル別エントリは全廃止）。部門の細分は `restaurants.genre_id` で表現済みのため award 側で重複させず、「百名店掲載か否か」だけで運用 |
 
 ## seed（ローカル専用）
 

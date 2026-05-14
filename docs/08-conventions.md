@@ -115,3 +115,4 @@ bisyoku-app/
 - `supabase` クライアントをコンポーネントから直接 import する
 - `email` / `passphrase` / `service_role_key` などの秘匿値をフロントの import.meta.env でクライアントへ露出させる（`VITE_PUBLIC_*` 以外は使わない）
 - 写真・動画のアップロード機能を追加する（[`11-non-goals.md`](./11-non-goals.md) 参照）
+- 新規 `public` テーブルの migration で GRANT を書き忘れる（2026-10-30 以降、暗黙 GRANT が無くなり Data API から `42501` で弾かれる。詳細は [`02-data-model.md`](./02-data-model.md#新規テーブルは-grant-を明示する2026-10-30-以降必須)）

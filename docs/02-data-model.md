@@ -236,6 +236,42 @@ $$;
 
 `supabase/migrations/<timestamp>_<name>.sql` に SQL を追記し、ローカルで `supabase db reset` → `npm run db:types` で型再生成 → main マージで CI が `supabase db push` する。
 
+### 新規テーブルは GRANT を明示する（2026-10-30 以降必須）
+
+Supabase は 2026-10-30 以降、既存プロジェクトでも `public` スキーマの新規テーブルに**暗黙の GRANT を付与しない**方針に変更する（新規プロジェクトは 2026-05-30 から）。
+本 PJ は `@supabase/supabase-js`（Data API / PostgREST）経由でアクセスしているため、GRANT が無いと該当ロールから `42501` エラーで弾かれる。
+
+**既存テーブルは現行の grant が維持されるため影響なし**。**今後追加するテーブルだけ**ルールに従う。
+
+新規テーブルの migration は **「CREATE TABLE → ENABLE RLS → GRANT → CREATE POLICY」をワンセット**で書く：
+
+```sql
+create table public.foo (
+  id uuid primary key default gen_random_uuid(),
+  -- ...
+);
+
+alter table public.foo enable row level security;
+
+-- Data API から触らせるロールに対して明示的に GRANT
+grant select on public.foo to anon;
+grant select, insert, update, delete on public.foo to authenticated;
+grant select, insert, update, delete on public.foo to service_role;
+
+create policy "foo_select" on public.foo
+  for select to authenticated
+  using (is_invited_user());
+-- 必要に応じて INSERT / UPDATE / DELETE ポリシーも追加
+```
+
+GRANT の粒度は RLS ポリシーと整合させる：
+
+- 招待ユーザーから読み書きさせる通常テーブル → `authenticated` に `select, insert, update, delete`
+- `allowed_emails` のように Service Role だけが触るテーブル → `service_role` のみに GRANT（`anon` / `authenticated` には付けない）
+- `health` のように anon にも読ませるテーブル → `anon` に `select` も付与
+
+GRANT を忘れた場合、PostgREST のエラー文に `GRANT ...` 文がそのまま入って返ってくるので、エラーを見たら migration を追加する。
+
 | ファイル | 内容 |
 |---|---|
 | `0001_init.sql` | 初期スキーマ + RLS + view + health |
